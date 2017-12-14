@@ -1,0 +1,31 @@
+name:                deep-sessions
+version:             0.1.0.0
+github:              dcastrop/deep-sessions
+license:             BSD3
+author:              David Castro-Perez
+maintainer:          david.castro.dcp@gmail.com
+copyright:           2017 David Castro-Perez
+
+extra-source-files:
+- README.md
+- ChangeLog.md
+
+# Metadata used when publishing your package
+synopsis:            Deep embedding of a multiparty session-type language.
+# category:            Web
+
+# To avoid duplicated efforts in documentation and dealing with the
+# complications of embedding Haddock markup inside cabal files, it is
+# common to point users to the README.md file.
+description:         Please see the README on Github at <https://github.com/dcastrop/deep-sessions#readme>
+
+dependencies:
+- base >= 4.7 && < 5
+- containers >= 0.5 && < 0.6
+- prettyprinter >= 1.1 && < 1.2
+- quoted-prettyprinter >= 0.1 && < 0.2
+
+library:
+  source-dirs: src
+  ghc-options:
+  - -Wall
