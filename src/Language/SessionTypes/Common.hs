@@ -1,7 +1,8 @@
+{-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE ViewPatterns #-}
 {-# LANGUAGE QuasiQuotes #-}
 module Language.SessionTypes.Common
-( Label
+( Label (..)
 , Role
 , RoleSet (..)
 , Alt (..)
@@ -15,10 +16,10 @@ import Data.Text.Prettyprint.Doc ( Pretty, pretty )
 import qualified Data.Text.Prettyprint.Doc as Pretty
 import Data.Text.Prettyprint.EDoc
 
-newtype Label  = Lbl { labelId  :: Int }
+data Label ann = Lbl { labelId  :: Int, labelAnn :: ann }
   deriving (Eq, Ord)
 
-instance Pretty Label where
+instance Pretty (Label ann) where
   pretty (labelId -> l) = [ppr| "_l" + l |]
 
 newtype Role   = Rol { roleName :: Int }
@@ -34,9 +35,9 @@ instance Pretty RoleSet where
       Pretty.braces $ Pretty.hsep $
         Pretty.punctuate (pretty ',') $ map pretty $ Set.toList s
 
-newtype Alt ann c = Alt { altMap :: Map ann c }
+newtype Alt ann c = Alt { altMap :: Map (Label ann) c }
 
-instance (Pretty c, Pretty ann) => Pretty (Alt ann c) where
+instance Pretty c => Pretty (Alt ann c) where
   pretty (Map.assocs . altMap -> [(_, c)]) =
       pretty c
 
