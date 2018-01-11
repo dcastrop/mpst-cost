@@ -10,8 +10,6 @@ module Language.SessionTypes.Common
 
 import Data.Map ( Map )
 import qualified Data.Map as Map
-import Data.Set ( Set )
-import qualified Data.Set as Set
 import Data.Text.Prettyprint.Doc ( Pretty, pretty )
 import qualified Data.Text.Prettyprint.Doc as Pretty
 import Data.Text.Prettyprint.EDoc
@@ -28,24 +26,20 @@ newtype Role   = Rol { roleName :: Int }
 instance Pretty Role where
   pretty (roleName -> r) = [ppr| "_r" + r |]
 
-newtype RoleSet = RS { unRS :: Set Role }
+newtype RoleSet = RS { unRS :: [Role] }
 
 instance Pretty RoleSet where
-  pretty (unRS -> s) =
-      Pretty.braces $ Pretty.hsep $
-        Pretty.punctuate (pretty ',') $ map pretty $ Set.toList s
+  pretty =
+    Pretty.braces . Pretty.hsep . Pretty.punctuate (pretty ',')
+    . map pretty . unRS
 
 newtype Alt ann c = Alt { altMap :: Map (Label ann) c }
 
 instance Pretty c => Pretty (Alt ann c) where
-  pretty (Map.assocs . altMap -> [(_, c)]) =
-      pretty c
+  pretty (Map.assocs . altMap -> [(_, c)]) = pretty c
 
   pretty (Map.assocs . altMap -> m) =
-      Pretty.braces $ Pretty.align $
-        Pretty.vsep $
-          Pretty.punctuate Pretty.semi $
-            map (uncurry prettyLblAlt) m
+      Pretty.braces $ Pretty.align $ Pretty.vsep $
+        Pretty.punctuate Pretty.semi $ map (uncurry prettyLblAlt) m
     where
       prettyLblAlt lbl c = [ppr| lbl > '.' > c |]
-

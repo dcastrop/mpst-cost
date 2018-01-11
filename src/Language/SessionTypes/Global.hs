@@ -14,7 +14,7 @@ module Language.SessionTypes.Global
   ) where
 
 import Control.Monad ( liftM, liftM2, liftM3 )
-import Data.Set ( Set )
+import qualified Data.List as List
 import Data.Text.Prettyprint.Doc ( Pretty, pretty )
 import Data.Text.Prettyprint.EDoc
 
@@ -22,17 +22,17 @@ import Language.SessionTypes.Common
 
 -- | Annotated messages
 data Msg pl ann =
-  Msg { rfrom :: Role
-      , rto :: Set Role
+  Msg { rfrom :: [Role]
+      , rto :: [Role]
       , rty :: pl
       , msgAnn :: ann }
 
 instance (Pretty pl, Pretty ann) => Pretty (Msg pl ann) where
   pretty (Msg from to ty ann) =
-      [ppr| from > "->" > RS to > "{" > ann > "} :" > ty |]
+      [ppr| RS from > "->" > RS to > "{" > ann > "} :" > ty |]
 
 -- | Global types
-data GT v pl ann = Choice Role (Set Role) (GBranch v pl ann)
+data GT v pl ann = Choice Role [Role] (GBranch v pl ann)
               | Comm (Msg pl ann) (GT v pl ann)
               | GRec v (GT v pl ann)
               | GVar v
@@ -41,15 +41,14 @@ data GT v pl ann = Choice Role (Set Role) (GBranch v pl ann)
 seqComm :: [Msg t a] -> GT v t a -> GT v t a
 seqComm msg = go (reverse msg)
   where
-    go [] g     = g
-    go (m:ms) g = go ms (Comm m g)
+    go = flip (List.foldl' (flip Comm))
 
 mSeqComm :: Monad m => m [Msg t a] -> m (GT v t a) -> m (GT v t a)
 mSeqComm = liftM2 seqComm
 
 mChoice :: Monad m
         => m Role
-        -> m (Set Role)
+        -> m [Role]
         -> m (GBranch v pl ann)
         -> m (GT v pl ann)
 mChoice = liftM3 Choice
