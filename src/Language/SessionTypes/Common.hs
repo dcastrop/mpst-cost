@@ -7,10 +7,12 @@
 {-# LANGUAGE StandaloneDeriving #-}
 module Language.SessionTypes.Common
   ( Label (..)
-  , Role
+  , Role (..)
   , RoleSet (..)
-  , Alt
+  , Alt (..)
+  , adjust
   , addAlt
+  , getAlt
   , emptyAlt
   ) where
 
@@ -21,6 +23,9 @@ import qualified Data.Text.Prettyprint.Doc as Pretty
 import Data.Text.Prettyprint.EDoc
 
 data Label ann = Lbl { labelId  :: Int, labelAnn :: ann }
+
+instance Show (Label ann) where
+  show = show . labelId
 
 instance Eq (Label ann) where
   l1 == l2 = labelId l1 == labelId l2
@@ -33,6 +38,9 @@ instance Pretty (Label ann) where
 
 newtype Role   = Rol { roleName :: Int }
   deriving (Eq, Ord)
+
+instance Show Role where
+  show = show . roleName
 
 instance Pretty Role where
   pretty (roleName -> r) = [ppr| "_r" + r |]
@@ -50,8 +58,18 @@ deriving instance Foldable (Alt ann)
 deriving instance Functor (Alt ann)
 deriving instance Traversable (Alt ann)
 
+adjust :: Label ann -> (c -> Maybe c) -> Alt ann c -> Maybe (Alt ann c)
+adjust l f = fmap Alt . madjust . altMap
+  where
+    madjust m
+      | Just c <- Map.lookup l m, Just c' <- f c = Just $ Map.insert l c' m
+      | otherwise                              = Nothing
+
 addAlt :: Int -> ann -> c -> Alt ann c -> Alt ann c
 addAlt i a c = Alt . Map.insert (Lbl i a) c . altMap
+
+getAlt :: Int -> Alt ann c -> Maybe c
+getAlt i = Map.lookup (Lbl i undefined) . altMap
 
 emptyAlt :: Alt ann c
 emptyAlt = Alt Map.empty
