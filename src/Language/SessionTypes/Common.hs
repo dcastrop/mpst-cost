@@ -22,18 +22,18 @@ import Data.Text.Prettyprint.Doc ( Pretty, pretty )
 import qualified Data.Text.Prettyprint.Doc as Pretty
 import Data.Text.Prettyprint.EDoc
 
-data Label ann = Lbl { labelId  :: Int, labelAnn :: ann }
+data Label = Lbl { labelId  :: Int }
 
-instance Show (Label ann) where
+instance Show Label where
   show = show . labelId
 
-instance Eq (Label ann) where
+instance Eq Label where
   l1 == l2 = labelId l1 == labelId l2
 
-instance Ord (Label ann) where
+instance Ord Label where
   l1 `compare` l2 = labelId l1 `compare` labelId l2
 
-instance Pretty (Label ann) where
+instance Pretty Label where
   pretty (labelId -> l) = [ppr| "_l" + l |]
 
 newtype Role   = Rol { roleName :: Int }
@@ -52,24 +52,24 @@ instance Pretty RoleSet where
     Pretty.braces . Pretty.hsep . Pretty.punctuate (pretty ',')
     . map pretty . unRS
 
-newtype Alt ann c = Alt { altMap :: Map (Label ann) c }
+newtype Alt ann c = Alt { altMap :: Map Label c }
 
 deriving instance Foldable (Alt ann)
 deriving instance Functor (Alt ann)
 deriving instance Traversable (Alt ann)
 
-adjust :: Label ann -> (c -> Maybe c) -> Alt ann c -> Maybe (Alt ann c)
+adjust :: Label -> (c -> Maybe c) -> Alt ann c -> Maybe (Alt ann c)
 adjust l f = fmap Alt . madjust . altMap
   where
     madjust m
       | Just c <- Map.lookup l m, Just c' <- f c = Just $ Map.insert l c' m
       | otherwise                              = Nothing
 
-addAlt :: Int -> ann -> c -> Alt ann c -> Alt ann c
-addAlt i a c = Alt . Map.insert (Lbl i a) c . altMap
+addAlt :: Int -> c -> Alt ann c -> Alt ann c
+addAlt i c = Alt . Map.insert (Lbl i) c . altMap
 
 getAlt :: Int -> Alt ann c -> Maybe c
-getAlt i = Map.lookup (Lbl i undefined) . altMap
+getAlt i = Map.lookup (Lbl i) . altMap
 
 emptyAlt :: Alt ann c
 emptyAlt = Alt Map.empty

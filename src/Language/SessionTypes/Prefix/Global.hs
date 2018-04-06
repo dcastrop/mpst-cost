@@ -37,7 +37,7 @@ data Msg pl ann =
 
 instance (Pretty pl, Pretty ann) => Pretty (Msg pl ann) where
   pretty (Msg from to ty ann) =
-      [ppr| RS from > "->" > RS to > "{" > ann > "} :" > ty |]
+      [ppr| RS from > "->" > RS to > "<" > ty + "|" + ann > ">" |]
 
 data Op = Seq | Par deriving Eq
 
@@ -122,7 +122,7 @@ type GBranch pl ann = Alt ann (GT pl ann)
 instance (Pretty ann, Pretty pl) => Pretty (GT pl ann) where
   pretty (Choice src b) = [ppr| src > "{" > b > "}" |]
   pretty (Comm i) = [ppr| i |]
-  pretty (GComp Par g1 g2) = [ppr| g1 + "||" + g2 |]
-  pretty (GComp Seq g1 g2) = [ppr| g1 + ".." + g2 |]
-  pretty (NewRole r g) = [ppr| "\\" > r + "." + g |]
+  pretty (GComp Par g1 g2) = [ppr| "(" > g1 + "||" + g2 > ")" |]
+  pretty (GComp Seq g1 g2) = [ppr| "(" > g1 + ".." + g2 > ")" |]
+  pretty (NewRole r g) = [ppr| "(\\" > r + "." + g > ")" |]
   pretty GSkip = [ppr| "skip" |]
