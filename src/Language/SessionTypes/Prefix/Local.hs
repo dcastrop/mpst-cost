@@ -19,7 +19,7 @@ data LT v pl ann =
   | LVar v
   | LEnd
 
-type LBranch v pl ann = Alt ann (LT v pl ann)
+type LBranch v pl ann = Alt (LT v pl ann)
 
 instance (Pretty v, Pretty ann, Pretty pl) => Pretty (LT v pl ann) where
   pretty (Send r t b) = [ppr| RS r > '!' > t + "." + b |]

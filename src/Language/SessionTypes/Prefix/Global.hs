@@ -24,6 +24,7 @@ import Data.Set ( Set )
 import qualified Data.Set as Set
 import qualified Data.Foldable as F
 import Data.Text.Prettyprint.Doc ( Pretty, pretty )
+import qualified Data.Text.Prettyprint.Doc as Ppr
 import Data.Text.Prettyprint.EDoc
 
 import Language.SessionTypes.Common
@@ -117,12 +118,16 @@ mGSkip :: Monad m
       => m (GT pl ann)
 mGSkip = return GSkip
 
-type GBranch pl ann = Alt ann (GT pl ann)
+type GBranch pl ann = Alt (GT pl ann)
 
 instance (Pretty ann, Pretty pl) => Pretty (GT pl ann) where
   pretty (Choice src b) = [ppr| src > "{" > b > "}" |]
   pretty (Comm i) = [ppr| i |]
-  pretty (GComp Par g1 g2) = [ppr| "(" > g1 + "||" + g2 > ")" |]
-  pretty (GComp Seq g1 g2) = [ppr| "(" > g1 + ".." + g2 > ")" |]
-  pretty (NewRole r g) = [ppr| "(\\" > r + "." + g > ")" |]
+  pretty (GComp Par g1 g2) = Ppr.vsep [[ppr| "(" > g1 |],
+                                         Ppr.nest 2 [ppr|"||" + g2 > ")" |]
+                                                    ]
+  pretty (GComp Seq g1 g2) = Ppr.vsep [[ppr| "(" > g1 |],
+                                         Ppr.nest 2 [ppr|".." + g2 > ")" |]
+                                                    ]
+  pretty (NewRole r g) = [ppr| "(\\" > r > "." | g > ")" |]
   pretty GSkip = [ppr| "skip" |]

@@ -52,29 +52,29 @@ instance Pretty RoleSet where
     Pretty.braces . Pretty.hsep . Pretty.punctuate (pretty ',')
     . map pretty . unRS
 
-newtype Alt ann c = Alt { altMap :: Map Label c }
+newtype Alt c = Alt { altMap :: Map Label c }
 
-deriving instance Foldable (Alt ann)
-deriving instance Functor (Alt ann)
-deriving instance Traversable (Alt ann)
+deriving instance Foldable Alt
+deriving instance Functor Alt
+deriving instance Traversable Alt
 
-adjust :: Label -> (c -> Maybe c) -> Alt ann c -> Maybe (Alt ann c)
+adjust :: Label -> (c -> Maybe c) -> Alt c -> Maybe (Alt c)
 adjust l f = fmap Alt . madjust . altMap
   where
     madjust m
       | Just c <- Map.lookup l m, Just c' <- f c = Just $ Map.insert l c' m
       | otherwise                              = Nothing
 
-addAlt :: Int -> c -> Alt ann c -> Alt ann c
+addAlt :: Int -> c -> Alt c -> Alt c
 addAlt i c = Alt . Map.insert (Lbl i) c . altMap
 
-getAlt :: Int -> Alt ann c -> Maybe c
+getAlt :: Int -> Alt c -> Maybe c
 getAlt i = Map.lookup (Lbl i) . altMap
 
-emptyAlt :: Alt ann c
+emptyAlt :: Alt c
 emptyAlt = Alt Map.empty
 
-instance Pretty c => Pretty (Alt ann c) where
+instance Pretty c => Pretty (Alt c) where
   pretty (Map.assocs . altMap -> [(_, c)]) = pretty c
 
   pretty (Map.assocs . altMap -> m) =

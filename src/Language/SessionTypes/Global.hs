@@ -79,7 +79,7 @@ infixr 4 ...
 (...) :: Msg pl ann -> GT v pl ann -> GT v pl ann
 (...) = Comm
 
-type GBranch v pl ann = Alt ann (GT v pl ann)
+type GBranch v pl ann = Alt (GT v pl ann)
 
 instance (Pretty v, Pretty ann, Pretty pl) => Pretty (GT v pl ann) where
   pretty (Choice src dest b) = [ppr| src > "->" > RS dest > ":" > b |]
