@@ -5,8 +5,8 @@ module Language.SessionTypes.Prefix.Global
   , gPar
   , gSeq
   , fr
-  , inr
-  , outr
+  , inputr
+  , outputr
   , seqComm
   , mSeqComm
   , mChoice
@@ -63,21 +63,21 @@ fr (NewRole x1 x2) = x1 `Set.delete` fr x2
 fr (GComp _ x1 x2)    = fr x1 `Set.union` fr x2
 fr GSkip           = Set.empty
 
-inr :: GT pl ann -> Set Role
-inr (Choice x1 x2)  = x1 `Set.insert` F.foldl1 Set.union (fmap inr x2)
-inr (Comm x)        = Set.fromList $ rfrom x
-inr (NewRole _x x2) = inr x2
-inr (GComp Par x1 x2)    = inr x1 `Set.union` inr x2
-inr (GComp Seq x1 x2)    = inr x1 `Set.union` (inr x2 `Set.difference` outr x1)
-inr GSkip           = Set.empty
+inputr :: GT pl ann -> Set Role
+inputr (Choice x1 x2)  = x1 `Set.insert` F.foldl1 Set.union (fmap inputr x2)
+inputr (Comm x)        = Set.fromList $ rfrom x
+inputr (NewRole _x x2) = inputr x2
+inputr (GComp Par x1 x2)    = inputr x1 `Set.union` inputr x2
+inputr (GComp Seq x1 x2)    = inputr x1 `Set.union` (inputr x2 `Set.difference` outputr x1)
+inputr GSkip           = Set.empty
 
-outr :: GT pl ann -> Set Role
-outr (Choice x1 x2)  = x1 `Set.insert` F.foldl1 Set.union (fmap outr x2)
-outr (Comm x)        = Set.fromList $ rto x
-outr (NewRole _x x2) = outr x2
-outr (GComp Par x1 x2)    = outr x1 `Set.union` outr x2
-outr (GComp Seq x1 x2)    = outr x2 `Set.union` (outr x1 `Set.difference` inr x2)
-outr GSkip           = Set.empty
+outputr :: GT pl ann -> Set Role
+outputr (Choice x1 x2)  = x1 `Set.insert` F.foldl1 Set.union (fmap outputr x2)
+outputr (Comm x)        = Set.fromList $ rto x
+outputr (NewRole _x x2) = outputr x2
+outputr (GComp Par x1 x2)    = outputr x1 `Set.union` outputr x2
+outputr (GComp Seq x1 x2)    = outputr x2 `Set.union` (outputr x1 `Set.difference` inputr x2)
+outputr GSkip           = Set.empty
 
 seqComm :: [Msg t a] -> GT t a
 seqComm = F.foldr1 (GComp Seq) . map Comm
