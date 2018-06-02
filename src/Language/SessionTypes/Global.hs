@@ -68,7 +68,7 @@ mGRec = liftM2 GRec
 mGVar :: Monad m
       => m v
       -> m (GT v pl ann)
-mGVar = liftM GVar
+mGVar = fmap GVar
 
 mGEnd :: Monad m
       => m (GT v pl ann)
