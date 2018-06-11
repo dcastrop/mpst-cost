@@ -13,7 +13,7 @@ module Language.SessionTypes.Global
   , (...)
   ) where
 
-import Control.Monad ( liftM, liftM2, liftM3 )
+import Control.Monad ( liftM2, liftM3 )
 import qualified Data.List as List
 import Data.Text.Prettyprint.Doc ( Pretty, pretty )
 import Data.Text.Prettyprint.EDoc
