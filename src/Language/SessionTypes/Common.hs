@@ -14,6 +14,7 @@ module Language.SessionTypes.Common
   , addAlt
   , getAlt
   , emptyAlt
+  , mapAlt
   ) where
 
 import Data.Map ( Map )
@@ -22,7 +23,7 @@ import Data.Text.Prettyprint.Doc ( Pretty, pretty )
 import qualified Data.Text.Prettyprint.Doc as Pretty
 import Data.Text.Prettyprint.EDoc
 
-data Label = Lbl { labelId  :: Int }
+newtype Label = Lbl { labelId  :: Int }
 
 instance Show Label where
   show = show . labelId
@@ -57,6 +58,9 @@ newtype Alt c = Alt { altMap :: Map Label c }
 deriving instance Foldable Alt
 deriving instance Functor Alt
 deriving instance Traversable Alt
+
+mapAlt :: (Label -> c -> d) -> Alt c -> Alt d
+mapAlt f Alt { altMap = m } = Alt $ Map.mapWithKey f m
 
 adjust :: Label -> (c -> Maybe c) -> Alt c -> Maybe (Alt c)
 adjust l f = fmap Alt . madjust . altMap
