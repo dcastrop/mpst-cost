@@ -30,6 +30,7 @@ data Msg pl ann =
       , rto :: [Role]
       , rty :: pl
       , msgAnn :: ann }
+  deriving Show
 
 instance (Pretty pl, Pretty ann) => Pretty (Msg pl ann) where
   pretty (Msg from to ty ann) =
@@ -41,6 +42,7 @@ data GT v pl ann = Choice Role [Role] (GBranch v pl ann)
               | GRec v (GT v pl ann)
               | GVar v
               | GEnd
+  deriving Show
 
 seqComm :: [Msg t a] -> GT v t a -> GT v t a
 seqComm msg = go (reverse msg)

@@ -54,6 +54,7 @@ instance Pretty RoleSet where
     . map pretty . unRS
 
 newtype Alt c = Alt { altMap :: Map Label c }
+  deriving Show
 
 deriving instance Foldable Alt
 deriving instance Functor Alt
