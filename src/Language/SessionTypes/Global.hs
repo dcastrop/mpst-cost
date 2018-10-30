@@ -1,6 +1,7 @@
 {-# LANGUAGE QuasiQuotes #-}
 module Language.SessionTypes.Global
   ( GT (..)
+  , getRoles
   , seqComm
   , mSeqComm
   , mChoice
@@ -15,6 +16,9 @@ module Language.SessionTypes.Global
 
 import Control.Monad ( liftM2, liftM3 )
 import qualified Data.List as List
+import Data.Set ( Set )
+import qualified Data.Set as Set
+import qualified Data.Map as Map
 import Data.Text.Prettyprint.Doc ( Pretty, pretty )
 import Data.Text.Prettyprint.EDoc
 
@@ -80,6 +84,19 @@ infixr 4 ...
 (...) = Comm
 
 type GBranch v pl ann = Alt (GT v pl ann)
+
+getRoles :: GT v pl ann -> Set Role
+getRoles GEnd = Set.empty
+getRoles GVar{} = Set.empty
+getRoles (GRec _ g) = getRoles g
+getRoles (Comm m g) = Set.unions [ Set.fromList $ rfrom m
+                                 , Set.fromList $ rto m
+                                 , getRoles g
+                                 ]
+getRoles (Choice r rs Alt { altMap = m } )
+  = Set.unions [ Set.fromList $ r : rs
+               , Set.unions $ map (getRoles . snd) $ Map.toList m
+               ]
 
 instance (Pretty v, Pretty ann, Pretty pl) => Pretty (GT v pl ann) where
   pretty (Choice src dest b) = [ppr| src > "->" > RS dest > ":" > b |]
