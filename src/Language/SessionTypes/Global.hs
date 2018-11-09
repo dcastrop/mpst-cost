@@ -20,6 +20,7 @@ import Data.Set ( Set )
 import qualified Data.Set as Set
 import qualified Data.Map as Map
 import Data.Text.Prettyprint.Doc ( Pretty, pretty )
+import qualified Data.Text.Prettyprint.Doc as Pretty
 import Data.Text.Prettyprint.EDoc
 
 import Language.SessionTypes.Common
@@ -104,7 +105,13 @@ getRoles (Choice r rs Alt { altMap = m } )
 
 instance (Pretty v, Pretty ann, Pretty pl) => Pretty (GT v pl ann) where
   pretty (Choice src dest b) = [ppr| src > "->" > RS dest > ":" > b |]
-  pretty (Comm i b) = [ppr| i + "." > b |]
+  pretty c@Comm{} = Pretty.align $!
+                    Pretty.vsep $!
+                    Pretty.punctuate (pretty ".") $!
+                    go c
+    where
+      go (Comm i b) = pretty i : go b
+      go g          = [pretty g]
   pretty (GRec v x) = [ppr| "rec" > v + "." > x |]
   pretty (GVar v) = [ppr| v |]
   pretty GEnd = [ppr| "end" |]
