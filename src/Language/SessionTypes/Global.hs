@@ -42,6 +42,7 @@ instance (Pretty pl, Pretty ann) => Pretty (Msg pl ann) where
 -- | Global types
 data GT v pl ann = Choice Role [Role] (GBranch v pl ann)
               | Comm (Msg pl ann) (GT v pl ann)
+              | GSeq (GT v pl ann) (GT v pl ann)
               | GRec v (GT v pl ann)
               | GVar v
               | GEnd
@@ -92,6 +93,7 @@ type GBranch v pl ann = Alt (GT v pl ann)
 
 getRoles :: GT v pl ann -> Set Role
 getRoles GEnd = Set.empty
+getRoles (GSeq g1 g2) = getRoles g1 `Set.union` getRoles g2
 getRoles GVar{} = Set.empty
 getRoles (GRec _ g) = getRoles g
 getRoles (Comm m g) = Set.unions [ Set.fromList $ rfrom m
@@ -104,6 +106,13 @@ getRoles (Choice r rs Alt { altMap = m } )
                ]
 
 instance (Pretty v, Pretty ann, Pretty pl) => Pretty (GT v pl ann) where
+  pretty gs@GSeq{} = Pretty.align $!
+                     Pretty.vsep $!
+                     Pretty.punctuate (pretty ";") $!
+                     go gs
+    where
+      go (GSeq g1 g2) = pretty g1 : go g2
+      go g            = [pretty g]
   pretty (Choice src dest b) = Pretty.align
                                $! Pretty.vsep
                                $! [[ppr| src > "->" > RS dest|], pretty b]
