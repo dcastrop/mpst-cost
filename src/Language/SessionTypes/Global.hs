@@ -26,14 +26,16 @@ import Language.SessionTypes.Common
 
 -- | Annotated messages
 data Msg pl ann =
-  Msg { rfrom :: [Role]
-      , rto :: [Role]
+  Msg { rfrom :: ![Role]
+      , rto :: ![Role]
       , rty :: pl
-      , msgAnn :: ann }
+      , msgAnn :: !(Maybe ann) }
   deriving Show
 
 instance (Pretty pl, Pretty ann) => Pretty (Msg pl ann) where
-  pretty (Msg from to ty ann) =
+  pretty (Msg from to ty Nothing) =
+      [ppr| RS from > "->" > RS to > ":" > ty |]
+  pretty (Msg from to ty (Just ann)) =
       [ppr| RS from > "->" > RS to > "{" > ann > "} :" > ty |]
 
 -- | Global types

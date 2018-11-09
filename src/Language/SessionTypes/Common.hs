@@ -49,9 +49,10 @@ instance Pretty Role where
 newtype RoleSet = RS { unRS :: [Role] }
 
 instance Pretty RoleSet where
-  pretty =
-    Pretty.braces . Pretty.hsep . Pretty.punctuate (pretty ',')
-    . map pretty . unRS
+  pretty (RS [r]) = pretty r
+  pretty rs =
+    Pretty.braces $! Pretty.hsep $! Pretty.punctuate (pretty ',')
+    $! map pretty $! unRS rs
 
 newtype Alt c = Alt { altMap :: Map Label c }
   deriving Show
@@ -61,13 +62,13 @@ deriving instance Functor Alt
 deriving instance Traversable Alt
 
 mapAlt :: (Label -> c -> d) -> Alt c -> Alt d
-mapAlt f Alt { altMap = m } = Alt $ Map.mapWithKey f m
+mapAlt f Alt { altMap = m } = Alt $! Map.mapWithKey f m
 
 adjust :: Label -> (c -> Maybe c) -> Alt c -> Maybe (Alt c)
 adjust l f = fmap Alt . madjust . altMap
   where
     madjust m
-      | Just c <- Map.lookup l m, Just c' <- f c = Just $ Map.insert l c' m
+      | Just c <- Map.lookup l m, Just c' <- f c = Just $! Map.insert l c' m
       | otherwise                              = Nothing
 
 addAlt :: Int -> c -> Alt c -> Alt c
