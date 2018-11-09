@@ -104,7 +104,9 @@ getRoles (Choice r rs Alt { altMap = m } )
                ]
 
 instance (Pretty v, Pretty ann, Pretty pl) => Pretty (GT v pl ann) where
-  pretty (Choice src dest b) = [ppr| src > "->" > RS dest > ":" > b |]
+  pretty (Choice src dest b) = Pretty.align
+                               $! Pretty.vsep
+                               $! [[ppr| src > "->" > RS dest|], pretty b]
   pretty c@Comm{} = Pretty.align $!
                     Pretty.vsep $!
                     Pretty.punctuate (pretty ".") $!
