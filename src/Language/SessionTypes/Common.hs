@@ -35,7 +35,7 @@ instance Ord Label where
   l1 `compare` l2 = labelId l1 `compare` labelId l2
 
 instance Pretty Label where
-  pretty (labelId -> l) = [ppr| "_l" + l |]
+  pretty (labelId -> l) = [ppr| "l" + l |]
 
 newtype Role   = Rol { roleName :: Int }
   deriving (Eq, Ord)
@@ -44,7 +44,7 @@ instance Show Role where
   show = show . roleName
 
 instance Pretty Role where
-  pretty (roleName -> r) = [ppr| "_r" + r |]
+  pretty (roleName -> r) = [ppr| "r" + r |]
 
 newtype RoleSet = RS { unRS :: [Role] }
 
