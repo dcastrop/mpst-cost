@@ -1,4 +1,3 @@
-{-# LANGUAGE QuasiQuotes #-}
 module Language.SessionTypes.Global
   ( GT (..)
   , getRoles
@@ -21,7 +20,6 @@ import qualified Data.Set as Set
 import qualified Data.Map as Map
 import Data.Text.Prettyprint.Doc ( Pretty, pretty )
 import qualified Data.Text.Prettyprint.Doc as Pretty
-import Data.Text.Prettyprint.EDoc
 
 import Language.SessionTypes.Common
 
@@ -35,9 +33,20 @@ data Msg pl ann =
 
 instance (Pretty pl, Pretty ann) => Pretty (Msg pl ann) where
   pretty (Msg from to ty Nothing) =
-      [ppr| RS from > "->" > RS to > ":" > ty |]
+    Pretty.hsep
+    [ pretty $ RS from
+    , pretty "->"
+    , pretty $ RS to
+    , pretty ":"
+    , pretty ty ]
   pretty (Msg from to ty (Just ann)) =
-      [ppr| RS from > "->" > RS to > "{" > ann > "} :" > ty |]
+    Pretty.hsep
+    [ pretty $ RS from
+    , pretty "->"
+    , pretty $ RS to
+    , Pretty.braces $ pretty ann
+    , pretty ":"
+    , pretty ty ]
 
 -- | Global types
 data GT v pl ann = Choice Role [Role] (GBranch v pl ann)
@@ -112,7 +121,12 @@ instance (Pretty v, Pretty ann, Pretty pl) => Pretty (GT v pl ann) where
                      map pretty gs
   pretty (Choice src dest b) = Pretty.align
                                $! Pretty.vsep
-                               $! [[ppr| src > "->" > RS dest|], pretty b]
+                               $! [ Pretty.hsep [ pretty src
+                                                , pretty "->"
+                                                , pretty $ RS dest
+                                                ]
+                                  , pretty b
+                                  ]
   pretty c@Comm{} = Pretty.align $!
                     Pretty.vsep $!
                     Pretty.punctuate (pretty ".") $!
@@ -120,6 +134,9 @@ instance (Pretty v, Pretty ann, Pretty pl) => Pretty (GT v pl ann) where
     where
       go (Comm i b) = pretty i : go b
       go g          = [pretty g]
-  pretty (GRec v x) = [ppr| "rec" > v + "." > x |]
-  pretty (GVar v) = [ppr| v |]
-  pretty GEnd = [ppr| "end" |]
+  pretty (GRec v x) = Pretty.hsep [ pretty "rec"
+                                  , pretty v Pretty.<> pretty "."
+                                  , pretty x
+                                  ]
+  pretty (GVar v) = pretty v
+  pretty GEnd = pretty "end"

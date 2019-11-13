@@ -1,11 +1,10 @@
-{-# LANGUAGE QuasiQuotes #-}
 module Language.SessionTypes.Local
 ( LBranch
 , LT (..)
 ) where
 
 import Data.Text.Prettyprint.Doc ( Pretty, pretty )
-import Data.Text.Prettyprint.EDoc
+import qualified Data.Text.Prettyprint.Doc as Pretty
 
 import Language.SessionTypes.Common
 
@@ -22,10 +21,37 @@ data LT v pl ann =
 type LBranch v pl ann = Alt (LT v pl ann)
 
 instance (Pretty v, Pretty ann, Pretty pl) => Pretty (LT v pl ann) where
-  pretty (Send r t b) = [ppr| RS r > '!' > t + "." + b |]
-  pretty (Recv r t b) = [ppr| r > '?' > t + "." + b |]
-  pretty (Select r b) = [ppr| RS r > '*' > b |]
-  pretty (Branch r b) = [ppr| r > '&' > b |]
-  pretty (LRec v x)   = [ppr| "rec" > v + "." > x |]
-  pretty (LVar v)     = [ppr| v |]
-  pretty LEnd         = [ppr| "end" |]
+  pretty (Send r t b) =
+    Pretty.hsep [ pretty $ RS r
+                , pretty "!"
+                , Pretty.angles $ pretty t
+                , pretty "."
+                , pretty b
+                ]
+  pretty (Recv r t b) =
+    Pretty.hsep [ pretty $ RS r
+                , pretty "?"
+                , Pretty.parens $ pretty t
+                , pretty "."
+                , pretty b
+                ]
+  pretty (Select r b) =
+    Pretty.hsep [ pretty $ RS r
+                , pretty "*"
+                , pretty b
+                ]
+  pretty (Branch r b) =
+    Pretty.hsep [ pretty r
+                , pretty "&"
+                , pretty b
+                ]
+  pretty (LRec v x)   =
+    Pretty.hsep [ pretty "rec"
+                , pretty v Pretty.<> pretty "."
+                , pretty "."
+                , pretty x
+                ]
+  pretty (LVar v) =
+    pretty v
+  pretty LEnd =
+    pretty "end"

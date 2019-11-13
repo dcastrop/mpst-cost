@@ -3,7 +3,6 @@
 {-# LANGUAGE DeriveTraversable #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE ViewPatterns #-}
-{-# LANGUAGE QuasiQuotes #-}
 {-# LANGUAGE StandaloneDeriving #-}
 module Language.SessionTypes.Common
   ( Label (..)
@@ -21,7 +20,6 @@ import Data.Map ( Map )
 import qualified Data.Map.Strict as Map
 import Data.Text.Prettyprint.Doc ( Pretty, pretty )
 import qualified Data.Text.Prettyprint.Doc as Pretty
-import Data.Text.Prettyprint.EDoc
 
 newtype Label = Lbl { labelId  :: Int }
 
@@ -35,7 +33,7 @@ instance Ord Label where
   l1 `compare` l2 = labelId l1 `compare` labelId l2
 
 instance Pretty Label where
-  pretty (labelId -> l) = [ppr| "l" + l |]
+  pretty (labelId -> l) = Pretty.hcat [ pretty "l", pretty l ]
 
 newtype Role   = Rol { roleName :: Int }
   deriving (Eq, Ord)
@@ -44,7 +42,7 @@ instance Show Role where
   show = show . roleName
 
 instance Pretty Role where
-  pretty (roleName -> r) = [ppr| "r" + r |]
+  pretty (roleName -> r) = Pretty.hcat [ pretty "r", pretty r ]
 
 newtype RoleSet = RS { unRS :: [Role] }
 
@@ -87,4 +85,4 @@ instance Pretty c => Pretty (Alt c) where
       Pretty.braces $ Pretty.align $ Pretty.vsep $
         Pretty.punctuate Pretty.semi $ map (uncurry prettyLblAlt) m
     where
-      prettyLblAlt lbl c = [ppr| lbl > '.' > c |]
+      prettyLblAlt lbl c = Pretty.hsep [ pretty lbl, pretty ".", pretty c ]
