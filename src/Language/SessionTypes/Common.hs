@@ -1,7 +1,10 @@
+{-# LANGUAGE ConstraintKinds #-}
 {-# LANGUAGE DeriveFoldable #-}
 {-# LANGUAGE DeriveFunctor #-}
 {-# LANGUAGE DeriveTraversable #-}
 {-# LANGUAGE FlexibleInstances #-}
+{-# LANGUAGE MultiParamTypeClasses #-}
+{-# LANGUAGE FunctionalDependencies #-}
 {-# LANGUAGE ViewPatterns #-}
 {-# LANGUAGE StandaloneDeriving #-}
 module Language.SessionTypes.Common
@@ -11,7 +14,9 @@ module Language.SessionTypes.Common
   , Alt (..)
   , adjust
   , addAlt
+  , addLAlt
   , getAlt
+  , foldAlt
   , emptyAlt
   , mapAlt
   ) where
@@ -62,6 +67,9 @@ deriving instance Traversable Alt
 mapAlt :: (Label -> c -> d) -> Alt c -> Alt d
 mapAlt f Alt { altMap = m } = Alt $! Map.mapWithKey f m
 
+foldAlt :: (a -> b -> a) -> a -> Alt b -> a
+foldAlt f z Alt { altMap = m } = Map.foldl' f z m
+
 adjust :: Label -> (c -> Maybe c) -> Alt c -> Maybe (Alt c)
 adjust l f = fmap Alt . madjust . altMap
   where
@@ -70,7 +78,11 @@ adjust l f = fmap Alt . madjust . altMap
       | otherwise                              = Nothing
 
 addAlt :: Int -> c -> Alt c -> Alt c
-addAlt i c = Alt . Map.insert (Lbl i) c . altMap
+addAlt i = addLAlt (Lbl i)
+
+addLAlt :: Label -> c -> Alt c -> Alt c
+addLAlt i c = Alt . Map.insert i c . altMap
+
 
 getAlt :: Int -> Alt c -> Maybe c
 getAlt i = Map.lookup (Lbl i) . altMap
