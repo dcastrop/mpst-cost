@@ -27,6 +27,8 @@ module Language.SessionTypes.Cost
   , printEqns
   , cost
   , evalTime
+  , evalDelta
+  , unroll
   ) where
 
 import Control.Monad.State.Strict
@@ -84,7 +86,7 @@ data Cost i
   | CMul (Size i) (Cost i)
   | CSend Role Role VSize
   | CRecv Role Role VSize
-  | CDelta Time
+  | CDelta Role Time
   deriving Show
 
 instance Pretty i => Pretty (Cost i) where
@@ -119,10 +121,10 @@ instance Pretty i => Pretty (Cost i) where
                                               , pretty sz
                                               ]
                 ]
-  pretty (CDelta t) =
-    pretty "\\Delta" <> Pretty.parens (Pretty.hsep $ map time $ Map.toList t)
+  pretty (CDelta r t) =
+    pretty "\\Delta_" <> pretty r <> Pretty.parens (Pretty.hsep $ map time $ Map.toList t)
     where
-      time (r, c) = pretty r Pretty.<+> pretty "=" Pretty.<+> pretty c <> pretty ";"
+      time (rr, c) = pretty rr Pretty.<+> pretty "=" Pretty.<+> pretty c <> pretty ";"
 
 showCost :: Pretty i => Cost i -> String
 showCost = show . pretty
@@ -373,7 +375,7 @@ mulCost :: Integer -> Time -> Time
 mulCost i t = Map.map (CMul (K i)) t
 
 delta :: Time -> Time
-delta t = Map.map (\_ -> CDelta t) t
+delta t = Map.mapWithKey (\r _ -> CDelta r t) t
 
 sCost :: CGT -> MTime ()
 sCost CGEnd = pure ()
@@ -429,7 +431,9 @@ evalTime distm vars = Map.map evalC
     evalC (CMul l r   ) = evalS l * evalC r
     evalC (CSend f t s) = maybe 0 ($ evalS s) (Map.lookup (f, t) distm)
     evalC (CRecv f t s) = maybe 0 ($ evalS s) (Map.lookup (f, t) distm)
-    evalC (CDelta _   ) = 0 -- XXX: Fixme
+    evalC (CDelta r d ) = rd 2 - rd 1
+      where
+        rd i = maybe 0 evalC $! Map.lookup r (unroll i d)
 
     evalS :: VSize -> Double
     evalS (Var v   ) = maybe 0 id $! Map.lookup v vars
@@ -439,10 +443,35 @@ evalTime distm vars = Map.map evalC
     evalS (SMul l r) = evalS l * evalS r
     evalS (SDiv l r) = evalS l / evalS r
 
--- unrollTime :: Integer -> Time -> Time
--- unrollTime i t
---   | i == 0    = Map.map (\_ -> CSize $ K 0) t
---   | otherwise = Map.map (\v -> doUnroll v) t
+unrollTime :: Time -> Time -> Time
+unrollTime to t = Map.map (\v -> doUnroll v) t
+  where
+    doUnroll c@CSize{} = c
+    doUnroll c@CVar{}  = c
+    doUnroll c@CSend{} = c
+    doUnroll c@CRecv{} = c
+    doUnroll c@CDelta{} = c
+    doUnroll c@(CRec r) = maybe c id $! Map.lookup r to
+    doUnroll (CAdd l r) = CAdd (doUnroll l) (doUnroll r)
+    doUnroll (CMax l r) = CMax (doUnroll l) (doUnroll r)
+    doUnroll (CMul l r) = CMul l (doUnroll r)
+
+unroll :: Integer -> Time -> Time
+unroll i t
+  | i <= 0 = Map.map (\_ -> CSize $ K 0) t
+  | otherwise = go t $ i - 1
+  where
+    go tt j | j == 0 = Map.map rzero tt
+            | otherwise = go (unrollTime t tt) (j-1)
+    rzero CRec{} = CSize (K 0)
+    rzero c@CSize{} = c
+    rzero c@CVar{}  = c
+    rzero c@CSend{} = c
+    rzero c@CRecv{} = c
+    rzero c@CDelta{} = c
+    rzero (CAdd l r) = CAdd (rzero l) (rzero r)
+    rzero (CMax l r) = CMax (rzero l) (rzero r)
+    rzero (CMul l r) = CMul l (rzero r)
 
 evalDelta :: Map (Role, Role) (Double -> Double)
           -> Map String Double
@@ -459,7 +488,9 @@ evalDelta distm vars = Map.map evalC
     evalC (CMul l r   ) = evalS l * evalC r
     evalC (CSend f t s) = maybe 0 ($ evalS s) (Map.lookup (f, t) distm)
     evalC (CRecv f t s) = maybe 0 ($ evalS s) (Map.lookup (f, t) distm)
-    evalC (CDelta _   ) = 0 -- XXX: Fixme
+    evalC (CDelta r d ) = rd 2 - rd 1
+      where
+        rd i = maybe 0 evalC $! Map.lookup r (unroll i d)
 
     evalS :: VSize -> Double
     evalS (Var v   ) = maybe 0 id $! Map.lookup v vars
