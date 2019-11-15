@@ -7,6 +7,7 @@ module Language.SessionTypes.Cost
   , printCGT
   , Size (..)
   , Cost (..)
+  , Time
   , bCost
   , rCost
   , sCost
@@ -24,6 +25,8 @@ module Language.SessionTypes.Cost
   , throughput
   , showEqns
   , printEqns
+  , cost
+  , evalTime
   ) where
 
 import Control.Monad.State.Strict
@@ -81,6 +84,7 @@ data Cost i
   | CMul (Size i) (Cost i)
   | CSend Role Role VSize
   | CRecv Role Role VSize
+  | CDelta Time
   deriving Show
 
 instance Pretty i => Pretty (Cost i) where
@@ -90,9 +94,9 @@ instance Pretty i => Pretty (Cost i) where
   pretty (CAdd l r) = Pretty.hsep [ pretty l, pretty "+", pretty r]
   pretty (CMul l r) = Pretty.hsep [ prettyPs l, pretty "*", prettyPc r]
     where
-      prettyPs SAdd{} = Pretty.parens $ pretty r
-      prettyPs SSub{} = Pretty.parens $ pretty r
-      prettyPs _ =  pretty r
+      prettyPs SAdd{} = Pretty.parens $ pretty l
+      prettyPs SSub{} = Pretty.parens $ pretty l
+      prettyPs _ =  pretty l
       prettyPc CAdd{} = Pretty.parens $ pretty r
       prettyPc _ =  pretty r
   pretty (CMax l r) = go [l, r] []
@@ -115,6 +119,10 @@ instance Pretty i => Pretty (Cost i) where
                                               , pretty sz
                                               ]
                 ]
+  pretty (CDelta t) =
+    pretty "\\Delta" <> Pretty.parens (Pretty.hsep $ map time $ Map.toList t)
+    where
+      time (r, c) = pretty r Pretty.<+> pretty "=" Pretty.<+> pretty c <> pretty ";"
 
 showCost :: Pretty i => Cost i -> String
 showCost = show . pretty
@@ -362,7 +370,10 @@ addCost :: Time -> Time -> Time
 addCost = Map.unionWith CAdd
 
 mulCost :: Integer -> Time -> Time
-mulCost _ t = t -- Map.map (CMul (K i))
+mulCost i t = Map.map (CMul (K i)) t
+
+delta :: Time -> Time
+delta t = Map.map (\_ -> CDelta t) t
 
 sCost :: CGT -> MTime ()
 sCost CGEnd = pure ()
@@ -371,7 +382,7 @@ sCost (CGRec _ i g) = do
   s <- get
   rCost g
   k <- get
-  put $! addCost s (mulCost i k)
+  put $! addCost s (mulCost i $ delta k)
 sCost (CComm f t ty c k) = do
   sendCost t ty f
   recvCost f ty (Just c) t
@@ -392,6 +403,9 @@ throughput :: CGT -> Time
 throughput (CGRec _ _ g) = execState (unMTime $ rCost g) Map.empty
 throughput _  = error "Cannot compute throughput of non-recursive protocols"
 
+cost :: CGT -> Time
+cost g = execState (unMTime $ sCost g) Map.empty
+
 showEqns :: Time -> String
 showEqns t = show $ Pretty.vsep $ map time $ Map.toList t
   where
@@ -399,3 +413,28 @@ showEqns t = show $ Pretty.vsep $ map time $ Map.toList t
 
 printEqns :: Time -> IO ()
 printEqns = putStrLn . showEqns
+
+evalTime :: Map (Role, Role) (Double -> Double)
+         -> Map String Double
+         -> Time
+         -> Map Role Double
+evalTime distm vars = Map.map evalC
+  where
+    evalC :: VCost -> Double
+    evalC (CSize s    ) = evalS s
+    evalC (CVar v     ) = maybe 0 id $! Map.lookup v vars
+    evalC (CRec _     ) = 0 -- XXX: Fixme
+    evalC (CAdd l r   ) = evalC l + evalC r
+    evalC (CMax l r   ) = max (evalC l) (evalC r)
+    evalC (CMul l r   ) = evalS l * evalC r
+    evalC (CSend f t s) = maybe 0 ($ evalS s) (Map.lookup (f, t) distm)
+    evalC (CRecv f t s) = maybe 0 ($ evalS s) (Map.lookup (f, t) distm)
+    evalC (CDelta _   ) = 0 -- XXX: Fixme
+
+    evalS :: VSize -> Double
+    evalS (Var v   ) = maybe 0 id $! Map.lookup v vars
+    evalS (K k     ) = fromInteger k
+    evalS (SAdd l r) = evalS l + evalS r
+    evalS (SSub l r) = evalS l - evalS r
+    evalS (SMul l r) = evalS l * evalS r
+    evalS (SDiv l r) = evalS l / evalS r
