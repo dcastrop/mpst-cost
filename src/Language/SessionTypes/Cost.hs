@@ -3,8 +3,10 @@
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 module Language.SessionTypes.Cost
   ( CGT
+  , GTM
   , showCGT
   , printCGT
+  , latexCGT
   , Size (..)
   , Cost (..)
   , Time
@@ -29,6 +31,7 @@ module Language.SessionTypes.Cost
   , evalTime
   , evalDelta
   , unroll
+  , latexEqns
   ) where
 
 import Control.Monad.State.Strict
@@ -36,7 +39,7 @@ import Data.Set ( Set )
 import qualified Data.Set as Set
 import Data.Map.Strict ( Map )
 import qualified Data.Map.Strict as Map
-import Data.Text.Prettyprint.Doc ( Pretty, pretty )
+import Data.Text.Prettyprint.Doc ( Doc, Pretty, pretty )
 import qualified Data.Text.Prettyprint.Doc as Pretty
 
 import Language.SessionTypes.Common
@@ -49,6 +52,44 @@ data Size i
   | SMul (Size i) (Size i)
   | SDiv (Size i) (Size i)
   deriving Show
+
+class LaTeX t where
+  latex :: t -> Doc ann
+
+instance LaTeX String where
+  latex i = pretty i
+
+instance LaTeX i => LaTeX (Size i) where
+  latex (Var i) = latex i
+  latex (K i) = pretty i
+  latex (SAdd s1 s2) = go [s2, s1] []
+    where
+      go (SAdd sl sr : ss) acc = go (sr : sl : ss) acc
+      go (s : ss) acc = go ss (s : acc)
+      go [] acc = Pretty.hsep $! Pretty.punctuate (pretty "+") $! map latex acc
+  latex (SMul s1 s2) = go [s2, s1] []
+    where
+      go (SMul sl sr : ss) acc = go (sr : sl : ss) acc
+      go (s : ss) acc = go ss (s : acc)
+      go [] acc = Pretty.hsep $! Pretty.punctuate (pretty "+") $! map latexP acc
+      latexP t@SAdd{} = Pretty.parens (latex t)
+      latexP t@SSub{} = Pretty.parens (latex t)
+      latexP t = latex t
+  latex (SSub s1 s2) = Pretty.hsep [latex s1, pretty "-", latexP s2]
+    where
+      latexP t@SAdd{} = Pretty.parens (latex t)
+      latexP t@SSub{} = Pretty.parens (latex t)
+      latexP t = latex t
+  latex (SDiv l r) = Pretty.hsep [ prettyP1 l, pretty "/", prettyP2 r]
+    where
+      prettyP1 SAdd{} = Pretty.parens $ latex r
+      prettyP1 SSub{} = Pretty.parens $ latex r
+      prettyP1 _ =  latex r
+      prettyP2 SAdd{} = Pretty.parens $ latex r
+      prettyP2 SSub{} = Pretty.parens $ latex r
+      prettyP2 SMul{} = Pretty.parens $ latex r
+      prettyP2 SDiv{} = Pretty.parens $ latex r
+      prettyP2 _ =  latex r
 
 instance Pretty i => Pretty (Size i) where
   pretty (Var i) = pretty i
@@ -88,6 +129,36 @@ data Cost i
   | CRecv Role Role VSize
   | CDelta Role Time
   deriving Show
+
+instance LaTeX i => LaTeX (Cost i) where
+  latex (CSize i) = latex i
+  latex (CRec r)  = pretty "T_" <> latex r
+  latex (CVar i) = latex i
+  latex (CAdd l r) = Pretty.hsep [ latex l, pretty "+", latex r]
+  latex (CMul l r) = Pretty.hsep [ prettyPs l, pretty "*", prettyPc r]
+    where
+      prettyPs SAdd{} = Pretty.parens $ latex l
+      prettyPs SSub{} = Pretty.parens $ latex l
+      prettyPs _ = latex l
+      prettyPc CAdd{} = Pretty.parens $ latex r
+      prettyPc _ =  latex r
+  latex (CMax l r) = go [l, r] []
+    where
+      go (CMax hl hr : t) mm = go (hl : hr : t) mm
+      go (h : t) [] = go t [latex h]
+      go (h : t) mm = go t (latex h <> pretty "," : mm)
+      go [] mm = Pretty.hsep [ pretty "\\max", Pretty.parens $ Pretty.hsep mm]
+  latex (CSend _ _ sz) = pretty "\\csend" <> Pretty.parens (latex sz)
+  latex (CRecv _ _ sz) = pretty "\\crecv" <> Pretty.parens (latex sz)
+  latex (CDelta r t) = pretty "\\Delta_" <> pretty r
+                       <> pretty "\\left(\\begin{array}{@{}l@{}}"
+                       <> Pretty.vsep (map time $ Map.toList t)
+                       <> pretty "\\end{array}\\right)"
+    where
+      time (Rol rr, c) = pretty "T_" <> pretty rr
+                         Pretty.<+> pretty "="
+                         Pretty.<+> latex c
+                         <> pretty ";"
 
 instance Pretty i => Pretty (Cost i) where
   pretty (CSize i) = pretty i
@@ -145,6 +216,61 @@ data CGT
   | CGEnd
   deriving Show
 
+roleList :: [String]
+roleList = bl ++ [ b ++ "_" ++ show i | i <- [(1::Integer)..], b <- bl ]
+  where
+    bl = ["p", "q", "r", "s"]
+
+instance LaTeX Role where
+  latex (Rol r) = pretty "\\role{" <> pretty (roleList !! r) <> pretty "}"
+
+instance LaTeX Label where
+  latex (Lbl l) = pretty "l_" <> pretty l
+
+instance LaTeX (Alt CGT) where
+  latex (Alt m)
+    = Pretty.braces $
+      Pretty.hsep $
+      Pretty.punctuate (pretty ";") $
+      map lalt $
+      Map.toList m
+    where
+      lalt (l, g) = latex l <> pretty "." Pretty.<+> latex g
+
+instance LaTeX CGT where
+  latex (CChoice src dest b) = Pretty.align
+                               $! Pretty.vsep
+                               $! [ Pretty.hsep [ latex src
+                                                , pretty "\\gMsg"
+                                                , latex dest
+                                                 ]
+                                   , latex b
+                                  ]
+  latex c@CComm{} = Pretty.align $!
+                    Pretty.vsep $!
+                    Pretty.punctuate (pretty ".") $!
+                    go c
+    where
+      go (CComm f t ty cc b) = msg : go b
+        where
+          msg = Pretty.hsep
+                [ latex f
+                , pretty "\\gMsg"
+                , latex t
+                , pretty "\\gTy{"
+                , latex ty
+                , pretty "\\hasCost"
+                , latex cc
+                , pretty "}"
+                ]
+      go g          = [latex g]
+  latex (CGRec v _ x) = Pretty.hsep [ pretty "\\gFix"
+                                    , pretty v <> pretty "."
+                                    , latex x
+                                    ]
+  latex (CGVar v) = pretty v
+  latex CGEnd = pretty "\\gEnd"
+
 instance Pretty CGT where
   pretty (CChoice src dest b) = Pretty.align
                                 $! Pretty.vsep
@@ -185,10 +311,13 @@ showCGT = show . pretty
 printCGT :: CGT -> IO ()
 printCGT = print . pretty
 
+latexCGT :: CGT -> IO ()
+latexCGT = print . latex
+
 data GTSt = GTSt
   { nextRole :: Role
   , nextLabel :: Label
-  , nextVar :: [String]
+  , nextVar :: [RVar]
   , globalType :: CGT -> CGT
   }
 
@@ -232,18 +361,27 @@ choice r1 rs (GAlt gs) = do
       put s { globalType = id }
       pure $! globalType s
 
-newVar :: GTM String
-newVar = do
+newRVar :: GTM String
+newRVar = do
   s <- get
   case nextVar s of
     [] -> error "empty variable generator"
-    v : vs -> do
+    RVar v : vs -> do
       put s { nextVar = vs }
       pure v
 
+newtype RVar = RVar String
+
+instance Var RVar where
+  varGen = map RVar vg1 ++
+           [ RVar $ v ++ show i | i <- [1::Integer ..], v <- vg1 ]
+    where
+      vg1 = map (:[]) ['X'..'Z']
+
+
 grec :: Integer -> (GTM () -> GTM ()) -> GTM ()
 grec k f = do
-  v <- newVar
+  v <- newRVar
   modify $ \s -> s { globalType = globalType s . CGRec v k }
   f $ mkVar v
   where
@@ -415,6 +553,12 @@ showEqns t = show $ Pretty.vsep $ map time $ Map.toList t
 
 printEqns :: Time -> IO ()
 printEqns = putStrLn . showEqns
+
+latexEqns :: Time -> IO ()
+latexEqns t = putStrLn $ show $ Pretty.vsep $ map time $ Map.toList t
+  where
+    time (r, c) = pretty "T_" <> latex r
+      Pretty.<+> pretty "=" Pretty.<+> latex c
 
 evalTime :: Map (Role, Role) (Double -> Double)
          -> Map String Double

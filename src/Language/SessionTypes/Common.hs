@@ -16,9 +16,9 @@ module Language.SessionTypes.Common
   , addAlt
   , addLAlt
   , getAlt
-  , foldAlt
   , emptyAlt
   , mapAlt
+  , foldAlt
   ) where
 
 import Data.Map ( Map )

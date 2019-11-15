@@ -10,24 +10,24 @@ example1 = gclose $ do
   p <- mkRole
   q <- mkRole
   grec 3 $ \x -> do
-    message p q (Var "s1") (CVar "c1")
+    message p q (Var "\\tau_1") (CVar "c_1")
     x
 
 example2 :: CGT
 example2 = gclose $ do
   p <- mkRole
   q <- mkRole
-  grec 3 $ \x -> do
-    message p q (Var "s1") (CVar "c1")
-    message q p (Var "s2") (CVar "c2")
+  grec 2 $ \x -> do
+    message p q (Var "\\tau_1") (CVar "c_1")
+    message q p (Var "\\tau_2") (CVar "c_2")
     x
 
 exampleVars :: Map String Double
 exampleVars = Map.fromList
-  [ ("s1", 0.7)
-  , ("s2", 0.8)
-  , ("c1", 1.2)
-  , ("c2", 2.6)
+  [ ("\\tau_1", 0.7)
+  , ("\\tau_2", 0.8)
+  , ("c_1", 1.2)
+  , ("c_2", 2.6)
   ]
 
 exampleTopo :: Map (Role, Role) (Double -> Double)
@@ -44,3 +44,21 @@ thro2 = throughput example2
 
 cost1 :: Time
 cost1 = cost example1
+
+cost2 :: Time
+cost2 = cost example2
+
+--- PIPELINE
+pipeline :: Integer -> Role -> GTM () -> GTM ()
+pipeline i p k
+  | i <= 0 = k
+  | otherwise = do
+      q <- mkRole
+      message p q (Var $ "\\tau_" ++ show i) (CVar $ "c_" ++ show i)
+      pipeline (i-1) q k
+
+pipe2 :: CGT
+pipe2 = gclose $ mkRole >>= \r -> pipeline 2 r (pure ())
+
+rpipe2 :: CGT
+rpipe2 = gclose $ mkRole >>= \r -> grec 3 $ pipeline 2 r
