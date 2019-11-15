@@ -24,16 +24,16 @@ example2 = gclose $ do
 
 exampleVars :: Map String Double
 exampleVars = Map.fromList
-  [ ("s1", 1)
-  , ("s2", 2)
-  , ("c1", 10)
-  , ("c2", 20)
+  [ ("s1", 0.7)
+  , ("s2", 0.8)
+  , ("c1", 1.2)
+  , ("c2", 2.6)
   ]
 
 exampleTopo :: Map (Role, Role) (Double -> Double)
 exampleTopo = Map.fromList
-  [ ((Rol 0, Rol 1), \_ -> 10) -- Constant time to send/recv
-  , ((Rol 1, Rol 0), \_ -> 10)
+  [ ((Rol 0, Rol 1), \s -> s * 10) -- Constant time to send/recv
+  , ((Rol 1, Rol 0), \s -> s * 10)
   ]
 
 thro1 :: Time
