@@ -19,6 +19,8 @@ module Language.SessionTypes.Cost
   , (...)
   , (.|)
   , message
+  , send
+  , recv
   , choice
   , grec
   , gclose
@@ -152,10 +154,10 @@ instance LaTeX i => LaTeX (Cost i) where
   latex (CRecv _ _ sz) = pretty "\\crecv" <> Pretty.parens (latex sz)
   latex (CDelta r t) = pretty "\\Delta_" <> pretty r
                        <> pretty "\\left(\\begin{array}{@{}l@{}}"
-                       <> Pretty.vsep (map time $ Map.toList t)
+                       <> Pretty.vsep (map tme $ Map.toList t)
                        <> pretty "\\end{array}\\right)"
     where
-      time (Rol rr, c) = pretty "T_" <> pretty rr
+      tme (Rol rr, c) = pretty "T_" <> pretty rr
                          Pretty.<+> pretty "="
                          Pretty.<+> latex c
                          <> pretty ";"
@@ -193,9 +195,9 @@ instance Pretty i => Pretty (Cost i) where
                                               ]
                 ]
   pretty (CDelta r t) =
-    pretty "\\Delta_" <> pretty r <> Pretty.parens (Pretty.hsep $ map time $ Map.toList t)
+    pretty "\\Delta_" <> pretty r <> Pretty.parens (Pretty.hsep $ map tme $ Map.toList t)
     where
-      time (rr, c) = pretty rr Pretty.<+> pretty "=" Pretty.<+> pretty c <> pretty ";"
+      tme (rr, c) = pretty rr Pretty.<+> pretty "=" Pretty.<+> pretty c <> pretty ";"
 
 showCost :: Pretty i => Cost i -> String
 showCost = show . pretty
@@ -211,6 +213,8 @@ type VCost = Cost String
 data CGT
   = CChoice Role Role (Alt CGT)
   | CComm Role Role VSize VCost CGT
+  | CGSend Role Role VSize CGT
+  | CGRecv Role Role VSize VCost CGT
   | CGRec String Integer CGT
   | CGVar String
   | CGEnd
@@ -246,7 +250,13 @@ instance LaTeX CGT where
                                                  ]
                                    , latex b
                                   ]
-  latex c@CComm{} = Pretty.align $!
+  latex (CGRec v _ x) = Pretty.hsep [ pretty "\\gFix"
+                                    , pretty v <> pretty "."
+                                    , latex x
+                                    ]
+  latex (CGVar v) = pretty v
+  latex CGEnd = pretty "\\gEnd"
+  latex c = Pretty.align $!
                     Pretty.vsep $!
                     Pretty.punctuate (pretty ".") $!
                     go c
@@ -263,13 +273,29 @@ instance LaTeX CGT where
                 , latex cc
                 , pretty "}"
                 ]
+      go (CGSend f t ty b) = msg : go b
+        where
+          msg = Pretty.hsep
+                [ latex f
+                , pretty "\\gSend"
+                , latex t
+                , pretty "\\gTy{"
+                , latex ty
+                , pretty "}"
+                ]
+      go (CGRecv f t ty cc b) = msg : go b
+        where
+          msg = Pretty.hsep
+                [ latex t
+                , pretty "\\gRecv"
+                , latex f
+                , pretty "\\gTy{"
+                , latex ty
+                , pretty "\\hasCost"
+                , latex cc
+                , pretty "}"
+                ]
       go g          = [latex g]
-  latex (CGRec v _ x) = Pretty.hsep [ pretty "\\gFix"
-                                    , pretty v <> pretty "."
-                                    , latex x
-                                    ]
-  latex (CGVar v) = pretty v
-  latex CGEnd = pretty "\\gEnd"
 
 instance Pretty CGT where
   pretty (CChoice src dest b) = Pretty.align
@@ -280,7 +306,13 @@ instance Pretty CGT where
                                                  ]
                                    , pretty b
                                   ]
-  pretty c@CComm{} = Pretty.align $!
+  pretty (CGRec v k x) = Pretty.hsep [ pretty "rec[" <> pretty k <> pretty "]"
+                                  , pretty v Pretty.<> pretty "."
+                                  , pretty x
+                                  ]
+  pretty (CGVar v) = pretty v
+  pretty CGEnd = pretty "end"
+  pretty c = Pretty.align $!
                      Pretty.vsep $!
                      Pretty.punctuate (pretty ".") $!
                      go c
@@ -297,13 +329,28 @@ instance Pretty CGT where
                                               , pretty cc
                                               ]
                 ]
+      go (CGSend f t ty b) = msg : go b
+        where
+          msg = Pretty.hsep
+                [ pretty f
+                , pretty "~>"
+                , pretty t
+                , pretty ":"
+                , Pretty.parens $ pretty ty
+                ]
+      go (CGRecv f t ty cc b) = msg : go b
+        where
+          msg = Pretty.hsep
+                [ pretty t
+                , pretty "<~"
+                , pretty f
+                , pretty ": ("
+                , pretty ty
+                , pretty "<>"
+                , pretty cc
+                , pretty ")"
+                ]
       go g          = [pretty g]
-  pretty (CGRec v k x) = Pretty.hsep [ pretty "rec[" <> pretty k <> pretty "]"
-                                  , pretty v Pretty.<> pretty "."
-                                  , pretty x
-                                  ]
-  pretty (CGVar v) = pretty v
-  pretty CGEnd = pretty "end"
 
 showCGT :: CGT -> String
 showCGT = show . pretty
@@ -328,6 +375,16 @@ message :: Role -> Role -> VSize -> VCost -> GTM ()
 message r1 r2 ty ann = do
   s <- get
   put s { globalType = globalType s . CComm r1 r2 ty ann }
+
+send :: Role -> Role -> VSize -> GTM ()
+send r1 r2 ty = do
+  s <- get
+  put s { globalType = globalType s . CGSend r1 r2 ty }
+
+recv :: Role -> Role -> VSize -> VCost -> GTM ()
+recv r1 r2 ty acc = do
+  s <- get
+  put s { globalType = globalType s . CGRecv r1 r2 ty acc }
 
 newtype LAlt = LAlt (Label, GTM ())
 
@@ -434,26 +491,46 @@ roles (CGRec _ _ g) = roles g
 roles (CComm f t _ _ g) = Set.unions [ Set.fromList $ [f, t]
                                      , roles g
                                      ]
+roles (CGSend f t _ g) = Set.unions [ Set.fromList $ [f, t]
+                                     , roles g
+                                     ]
+roles (CGRecv f t _ _ g) = Set.unions [ Set.fromList $ [f, t]
+                                     , roles g
+                                     ]
 roles (CChoice r rs Alt { altMap = m } )
   = Set.unions [ Set.fromList $ [r, rs]
                , Set.unions $ map (roles . snd) $ Map.toList m
                ]
 
 type VTime i = Map Role (Cost i)
+type VMsgQ i = Map (Role, Role) [Cost i]
 type Time = VTime String
+type MsgQ = VMsgQ String
 
-newtype MTime a = MTime { unMTime :: State Time a }
-  deriving (Functor, Applicative, Monad, MonadState Time)
+data TSt = TSt { time :: Time, msgQ :: MsgQ }
+
+emptyTSt :: TSt
+emptyTSt = TSt { time = Map.empty, msgQ = Map.empty }
+
+newtype MTime a = MTime { unMTime :: State TSt a }
+  deriving (Functor, Applicative, Monad, MonadState TSt)
 
 maxTime :: Time -> Time -> Time
 maxTime = Map.unionWith CMax
+
+appMsgQ :: MsgQ -> MsgQ -> MsgQ
+appMsgQ = Map.unionWith maxQ
+  where
+    maxQ l r = zipWith CMax l r
 
 instance Semigroup (MTime ()) where
   c1 <> c2 = do
     s <- get
     s1 <- c1 *> get <* put s
     s2 <- c2 *> get
-    put $! maxTime s1 s2
+    put $! TSt { time = maxTime (time s1) (time s2)
+               , msgQ = appMsgQ (msgQ s1) (msgQ s2)
+               }
 
 instance Monoid (MTime ()) where
   mempty = pure ()
@@ -461,6 +538,8 @@ instance Monoid (MTime ()) where
 subst :: String -> CGT -> CGT -> CGT
 subst v g (CChoice r1 rs alts) = CChoice r1 rs $! mapAlt (\_ -> subst v g) alts
 subst v g (CComm f t ty c k) = CComm f t ty c $! subst v g k
+subst v g (CGSend f t ty k) = CGSend f t ty $! subst v g k
+subst v g (CGRecv f t ty c k) = CGRecv f t ty c $! subst v g k
 subst v g gr@(CGRec v' i g')
   | v == v' = gr
   | otherwise = CGRec v' i $! subst v g g'
@@ -482,29 +561,72 @@ bCost (CComm f t ty c k) = do
   sendCost t ty f
   recvCost f ty (Just c) t
   bCost k
+bCost (CGSend f t ty k) = do
+  asendCost t ty f
+  bCost k
+bCost (CGRecv f t ty c k) = do
+  arecvCost f ty (Just c) t
+  bCost k
 bCost (CChoice r1 rs alts) = do
   sendCost rs (K 1) r1
   recvCost r1 (K 1) Nothing rs
   foldAlt (<>) mempty (mapAlt (\_ -> bCost) alts)
 
+alterTime :: (Maybe (Cost String) -> Cost String) -> Role -> TSt -> TSt
+alterTime f r s = s { time = Map.alter (Just . f) r $ time s }
+
 sendCost :: Role -> VSize -> Role -> MTime ()
-sendCost rs sz f = modify $ Map.alter (Just . step) f
+sendCost rs sz f = modify $ alterTime step f
   where
     step Nothing = CSend f rs sz
     step (Just c) = CAdd (CSend f rs sz) c
 
+enqueue :: Maybe [Cost String] -> Cost String -> Maybe [Cost String]
+enqueue Nothing c = Just [c]
+enqueue (Just q) c = Just $ q ++ [c]
+
+dequeue :: (Role, Role) -> MsgQ -> (Maybe VCost, MsgQ)
+dequeue k m
+  | Just (h:t) <- Map.lookup k m = (Just h, Map.insert k t m)
+  | otherwise = (Nothing, m)
+
+-- FIXME
+asendCost :: Role -> VSize -> Role -> MTime ()
+asendCost rs sz f = do
+  s <- get
+  let tf = step (Map.lookup f $ time s)
+  put s { time = Map.insert f tf $ time s
+        , msgQ = Map.alter (`enqueue` tf) (f, rs) $ msgQ s
+        }
+  where
+    step Nothing = CSend f rs sz
+    step (Just c) = CAdd (CSend f rs sz) c
+
+arecvCost :: Role -> VSize -> Maybe VCost -> Role -> MTime ()
+arecvCost rs sz cc f = modify $ \s ->
+  let (td, dq) = dequeue (rs, f) $ msgQ s
+  in s { time = Map.alter (Just . step td) f $ time s
+       , msgQ = dq
+       }
+  where
+    step c1 c2 = CRecv f rs sz `addmC` cc `addmC` maxmC c1 c2
+
 recvCost :: Role -> VSize -> Maybe VCost -> Role -> MTime ()
 recvCost rs sz cc f = modify $ \s ->
-  case Map.lookup rs s of
-    Nothing -> Map.alter (Just . step Nothing) f s
-    Just c' -> Map.alter (Just . step (Just c')) f s
+  case Map.lookup rs $ time s of
+    Nothing -> alterTime (step Nothing)   f s
+    Just c' -> alterTime (step $ Just c') f s
   where
-    addmC c1 (Just c2) = CAdd c1 c2
-    addmC c1 Nothing = c1
-    maxmC (Just c1) (Just c2) = Just (CMax c1 c2)
-    maxmC c1 Nothing = c1
-    maxmC Nothing c2 = c2
     step c1 c2 = CRecv f rs sz `addmC` cc `addmC` maxmC c1 c2
+
+addmC :: Cost i -> Maybe (Cost i) -> Cost i
+addmC c1 (Just c2) = CAdd c1 c2
+addmC c1 Nothing = c1
+
+maxmC :: Maybe (Cost i) -> Maybe (Cost i) -> Maybe (Cost i)
+maxmC (Just c1) (Just c2) = Just (CMax c1 c2)
+maxmC c1 Nothing = c1
+maxmC Nothing c2 = c2
 
 addCost :: Time -> Time -> Time
 addCost = Map.unionWith CAdd
@@ -522,10 +644,17 @@ sCost (CGRec _ i g) = do
   s <- get
   rCost g
   k <- get
-  put $! addCost s (mulCost i $ delta k)
+  put $! s { time = addCost (time s) (mulCost i $ delta $ time k)
+           }
 sCost (CComm f t ty c k) = do
   sendCost t ty f
   recvCost f ty (Just c) t
+  sCost k
+sCost (CGSend f t ty k) = do
+  asendCost t ty f
+  sCost k
+sCost (CGRecv f t ty c k) = do
+  arecvCost f ty (Just c) t
   sCost k
 sCost (CChoice r1 rs alts) = do
   sendCost rs (K 1) r1
@@ -534,30 +663,32 @@ sCost (CChoice r1 rs alts) = do
 
 -- Cost of costw (mu X. G)
 rCost :: CGT -> MTime ()
-rCost g = put ks >> bCost g
+rCost g = modify ks >> bCost g
   where
-    ks = Map.fromList $! map (\r -> (r, CRec r)) rs
+    ks s = TSt { time = Map.fromList $! map (\r -> (r, CRec r)) rs
+               , msgQ = msgQ s
+               }
     rs = Set.toList $ roles g
 
 throughput :: CGT -> Time
-throughput (CGRec _ _ g) = execState (unMTime $ rCost g) Map.empty
+throughput (CGRec _ _ g) = time $ execState (unMTime $ rCost g) emptyTSt
 throughput _  = error "Cannot compute throughput of non-recursive protocols"
 
 cost :: CGT -> Time
-cost g = execState (unMTime $ sCost g) Map.empty
+cost g = time $ execState (unMTime $ sCost g) emptyTSt
 
 showEqns :: Time -> String
-showEqns t = show $ Pretty.vsep $ map time $ Map.toList t
+showEqns t = show $ Pretty.vsep $ map tme $ Map.toList t
   where
-    time (r, c) = pretty r Pretty.<+> pretty "=" Pretty.<+> pretty c
+    tme (r, c) = pretty r Pretty.<+> pretty "=" Pretty.<+> pretty c
 
 printEqns :: Time -> IO ()
 printEqns = putStrLn . showEqns
 
 latexEqns :: Time -> IO ()
-latexEqns t = putStrLn $ show $ Pretty.vsep $ map time $ Map.toList t
+latexEqns t = putStrLn $ show $ Pretty.vsep $ map tme $ Map.toList t
   where
-    time (r, c) = pretty "T_" <> latex r
+    tme (r, c) = pretty "T_" <> latex r
       Pretty.<+> pretty "=" Pretty.<+> latex c
 
 evalTime :: Map (Role, Role) (Double -> Double)

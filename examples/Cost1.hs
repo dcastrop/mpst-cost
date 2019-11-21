@@ -13,8 +13,15 @@ example1 = gclose $ do
     message p q (Var "\\tau_1") (CVar "c_1")
     x
 
-example2 :: CGT
-example2 = gclose $ do
+pingpong :: CGT
+pingpong = gclose $ do
+ p <- mkRole
+ q <- mkRole
+ message p q (Var "\\tau_1") (CVar "c_1")
+ message q p (Var "\\tau_2") (CVar "c_2")
+
+rpingpong :: CGT
+rpingpong = gclose $ do
   p <- mkRole
   q <- mkRole
   grec 2 $ \x -> do
@@ -40,13 +47,13 @@ thro1 :: Time
 thro1 = throughput example1
 
 thro2 :: Time
-thro2 = throughput example2
+thro2 = throughput rpingpong
 
 cost1 :: Time
 cost1 = cost example1
 
 cost2 :: Time
-cost2 = cost example2
+cost2 = cost rpingpong
 
 --- PIPELINE
 pipeline :: Integer -> Role -> GTM () -> GTM ()
@@ -62,3 +69,55 @@ pipe2 = gclose $ mkRole >>= \r -> pipeline 2 r (pure ())
 
 rpipe2 :: CGT
 rpipe2 = gclose $ mkRole >>= \r -> grec 3 $ pipeline 2 r
+
+
+--- SCATTER-GATHER
+scatter :: Integer -> Role -> GTM [Role]
+scatter i p
+  | i <= 0 = pure []
+  | otherwise = do
+      q <- mkRole
+      message p q (Var $ "\\tau_1") (CVar $ "c_1")
+      (q:) <$> scatter (i-1) p
+
+gather :: Role -> [Role] -> GTM ()
+gather _ [] = pure ()
+gather p (q:rs) = do
+  message q p (Var $ "\\tau_2") (CVar $ "c_2")
+  gather p rs
+
+scatterGather :: Integer -> GTM () -> GTM ()
+scatterGather i k = do
+  p <- mkRole
+  rs <- scatter i p
+  q <- mkRole
+  gather q rs
+  k
+
+sc2 :: CGT
+sc2 = gclose $ scatterGather 2 (pure ())
+
+rsc2 :: CGT
+rsc2 = gclose $ grec 3 $ \k -> scatterGather 2 k
+
+
+--- RING
+ring :: [Role] -> GTM ()
+ring ps@(p : _) = sendAll ps >> recvAll ps
+  where
+    sendAll (q : qs@(r : _))
+      = send q r (Var $ "\\tau") >> sendAll qs
+    sendAll [q] = send q p (Var $ "\\tau")
+    sendAll _ = pure ()
+
+    recvAll (q : qs@(r : _))
+      = recv q r (Var $ "\\tau") (CVar $ "c") >> recvAll qs
+    recvAll [q] = recv q p (Var $ "\\tau") (CVar $ "c")
+    recvAll _ = pure ()
+ring [] = pure ()
+
+ring2 :: CGT
+ring2 = gclose $ sequence (replicate 2 mkRole) >>= ring
+
+rring2 :: CGT
+rring2 = gclose $ grec 3 $ \k -> sequence (replicate 2 mkRole) >>= ring >> k
