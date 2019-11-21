@@ -1,5 +1,6 @@
 module Cost1 where
 
+import Control.Monad ( zipWithM_ )
 import Data.Map.Strict ( Map )
 import qualified Data.Map.Strict as Map
 import Language.SessionTypes.Common
@@ -19,41 +20,6 @@ pingpong = gclose $ do
  q <- mkRole
  message p q (Var "\\tau_1") (CVar "c_1")
  message q p (Var "\\tau_2") (CVar "c_2")
-
-rpingpong :: CGT
-rpingpong = gclose $ do
-  p <- mkRole
-  q <- mkRole
-  grec 2 $ \x -> do
-    message p q (Var "\\tau_1") (CVar "c_1")
-    message q p (Var "\\tau_2") (CVar "c_2")
-    x
-
-exampleVars :: Map String Double
-exampleVars = Map.fromList
-  [ ("\\tau_1", 0.7)
-  , ("\\tau_2", 0.8)
-  , ("c_1", 1.2)
-  , ("c_2", 2.6)
-  ]
-
-exampleTopo :: Map (Role, Role) (Double -> Double)
-exampleTopo = Map.fromList
-  [ ((Rol 0, Rol 1), \s -> s * 10) -- Constant time to send/recv
-  , ((Rol 1, Rol 0), \s -> s * 10)
-  ]
-
-thro1 :: Time
-thro1 = throughput example1
-
-thro2 :: Time
-thro2 = throughput rpingpong
-
-cost1 :: Time
-cost1 = cost example1
-
-cost2 :: Time
-cost2 = cost rpingpong
 
 --- PIPELINE
 pipeline :: Integer -> Role -> GTM () -> GTM ()
@@ -116,8 +82,133 @@ ring ps@(p : _) = sendAll ps >> recvAll ps
     recvAll _ = pure ()
 ring [] = pure ()
 
+ringTopo :: Int -> GTM ()
+ringTopo i = sequence (replicate i mkRole) >>= ring
+
 ring2 :: CGT
-ring2 = gclose $ sequence (replicate 2 mkRole) >>= ring
+ring2 = gclose $ ringTopo 2
 
 rring2 :: CGT
-rring2 = gclose $ grec 3 $ \k -> sequence (replicate 2 mkRole) >>= ring >> k
+rring2 = gclose $ grec 3 $ \k -> ringTopo 2 >> k
+
+
+-- FFT
+fftTopo :: [Role] -> GTM ()
+fftTopo []  = pure ()
+fftTopo [_] = pure ()
+fftTopo xs  =
+  fftTopo evens >>
+  fftTopo odds >>
+  zipWithM_ sendT evens odds >>
+  zipWithM_ sendT odds evens >>
+  zipWithM_ recvT evens odds >>
+  zipWithM_ recvT odds evens
+  where
+    (evens, odds) = split xs
+    split [] = ([], [])
+    split [x] = ([x], [])
+    split (x:y:zs) = (x:xt, y:yt) where (xt, yt) = split zs
+    sendT r1 r2 = send r1 r2 (Var $ "\\tau")
+    recvT r1 r2 = recv r1 r2 (Var $ "\\tau") (CVar "c")
+
+mkFft :: Int -> GTM ()
+mkFft i = sequence (replicate (2^i) mkRole) >>= fftTopo
+
+fft2 :: CGT
+fft2 = gclose $ mkFft 2
+
+
+----------------------------------------------------------------------
+-- Keigo's paper, Recursive pingpong
+
+rpingpong :: CGT
+rpingpong = gclose $ do
+  p <- mkRole
+  q <- mkRole
+  grec 1 $ \x -> do
+    message p q (Var "\\tau_1") (CVar "c_1")
+    message q p (Var "\\tau_2") (CVar "c_2")
+    x
+
+ppSizes :: Integer -> Map String Double
+ppSizes nints = Map.fromList
+  [ ("\\tau_1", fromInteger nints * 2) -- in bytes
+  , ("\\tau_2", fromInteger nints * 2)
+  , ("c_1", 5.2e-9)
+  , ("c_2", 5.2e-9)
+  ]
+
+ppIpcSend :: Map (Role, Role) (Double -> Double)
+ppIpcSend = Map.fromList
+  [ ((Rol 0, Rol 1), ipcDist)
+  , ((Rol 1, Rol 0), ipcDist)
+  ]
+  where
+    ipcDist s = 1.03e-6 + s * 2.39e-10
+
+ppIpcRecv :: Map (Role, Role) (Double -> Double)
+ppIpcRecv = Map.fromList
+  [ ((Rol 0, Rol 1), ipcDist)
+  , ((Rol 1, Rol 0), ipcDist)
+  ]
+  where
+    ipcDist s = 1.94e-6 + s * 2.39e-10
+
+ppThro :: Time
+ppThro = throughput rpingpong
+
+ppCost :: Time
+ppCost = cost rpingpong
+
+total :: Map Role Double -> Double
+total = Map.foldl' max 0
+
+ppIpcTimes :: [Double]
+ppIpcTimes = map evalIpc [1, 10, 100, 1000]
+  where
+    evalIpc i = total $ evalTime ppIpcSend ppIpcRecv (ppSizes i) ppCost
+
+ppEvSend :: Map (Role, Role) (Double -> Double)
+ppEvSend = Map.fromList
+  [ ((Rol 0, Rol 1), evDist)
+  , ((Rol 1, Rol 0), evDist)
+  ]
+  where
+    evDist _ = 1.5e-6
+
+ppEvRecv :: Map (Role, Role) (Double -> Double)
+ppEvRecv = Map.fromList
+  [ ((Rol 0, Rol 1), evDist)
+  , ((Rol 1, Rol 0), evDist)
+  ]
+  where
+    evDist _ = 1.59e-6
+
+ppEvTimes :: [Double]
+ppEvTimes = map evalEv [1, 10, 100, 1000]
+  where
+    evalEv i = total $ evalTime ppEvSend ppEvRecv (ppSizes i) ppCost
+
+ppLwtSend :: Map (Role, Role) (Double -> Double)
+ppLwtSend = Map.fromList
+  [ ((Rol 0, Rol 1), evDist)
+  , ((Rol 1, Rol 0), evDist)
+  ]
+  where
+    evDist _ = 1.025e-7
+
+ppLwtRecv :: Map (Role, Role) (Double -> Double)
+ppLwtRecv = Map.fromList
+  [ ((Rol 0, Rol 1), evDist)
+  , ((Rol 1, Rol 0), evDist)
+  ]
+  where
+    evDist _ = 1.025e-7
+
+ppLwtTimes :: [Double]
+ppLwtTimes = map evalEv [1, 10, 100, 1000]
+  where
+    evalEv i = total $ evalTime ppLwtSend ppLwtRecv (ppSizes i) ppCost
+
+----------------------------------------------------------------------
+----------------------------------------------------------------------

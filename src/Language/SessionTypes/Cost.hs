@@ -692,10 +692,11 @@ latexEqns t = putStrLn $ show $ Pretty.vsep $ map tme $ Map.toList t
       Pretty.<+> pretty "=" Pretty.<+> latex c
 
 evalTime :: Map (Role, Role) (Double -> Double)
+         -> Map (Role, Role) (Double -> Double)
          -> Map String Double
          -> Time
          -> Map Role Double
-evalTime distm vars = Map.map evalC
+evalTime csend crecv vars = Map.map evalC
   where
     evalC :: VCost -> Double
     evalC (CSize s    ) = evalS s
@@ -704,8 +705,8 @@ evalTime distm vars = Map.map evalC
     evalC (CAdd l r   ) = evalC l + evalC r
     evalC (CMax l r   ) = max (evalC l) (evalC r)
     evalC (CMul l r   ) = evalS l * evalC r
-    evalC (CSend f t s) = maybe 0 ($ evalS s) (Map.lookup (f, t) distm)
-    evalC (CRecv f t s) = maybe 0 ($ evalS s) (Map.lookup (f, t) distm)
+    evalC (CSend f t s) = maybe 0 ($ evalS s) (Map.lookup (f, t) csend)
+    evalC (CRecv f t s) = maybe 0 ($ evalS s) (Map.lookup (f, t) crecv)
     evalC (CDelta r d ) = rd 2 - rd 1
       where
         rd i = maybe 0 evalC $! Map.lookup r (unroll i d)
@@ -749,10 +750,11 @@ unroll i t
     rzero (CMul l r) = CMul l (rzero r)
 
 evalDelta :: Map (Role, Role) (Double -> Double)
+          -> Map (Role, Role) (Double -> Double)
           -> Map String Double
           -> Time
           -> Map Role Double
-evalDelta distm vars = Map.map evalC
+evalDelta csend crecv vars = Map.map evalC
   where
     evalC :: VCost -> Double
     evalC (CSize s    ) = evalS s
@@ -761,8 +763,8 @@ evalDelta distm vars = Map.map evalC
     evalC (CAdd l r   ) = evalC l + evalC r
     evalC (CMax l r   ) = max (evalC l) (evalC r)
     evalC (CMul l r   ) = evalS l * evalC r
-    evalC (CSend f t s) = maybe 0 ($ evalS s) (Map.lookup (f, t) distm)
-    evalC (CRecv f t s) = maybe 0 ($ evalS s) (Map.lookup (f, t) distm)
+    evalC (CSend f t s) = maybe 0 ($ evalS s) (Map.lookup (f, t) csend)
+    evalC (CRecv f t s) = maybe 0 ($ evalS s) (Map.lookup (f, t) crecv)
     evalC (CDelta r d ) = rd 2 - rd 1
       where
         rd i = maybe 0 evalC $! Map.lookup r (unroll i d)
