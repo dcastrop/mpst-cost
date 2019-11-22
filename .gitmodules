@@ -1,3 +1,6 @@
 [submodule "benchmarks/ocaml-mpst"]
 	path = benchmarks/ocaml-mpst
 	url = https://github.com/keigoi/ocaml-mpst.git
+[submodule "benchmarks/scribble-go-runtime"]
+	path = benchmarks/scribble-go-runtime
+	url = git@github.com:rhu1/scribble-go-runtime.git

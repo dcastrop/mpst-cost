@@ -29,8 +29,5 @@ scatterGather i k = do
   gather q rs
   k
 
-sc2 :: CGT
-sc2 = gclose $ scatterGather 2 (pure ())
-
-rsc2 :: CGT
-rsc2 = gclose $ grec 3 $ \k -> scatterGather 2 k
+mkSC :: Integer -> CGT
+mkSC i = gclose $ grec 1 $ scatterGather i
