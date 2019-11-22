@@ -144,7 +144,7 @@ ppIpcSend = Map.fromList
   , ((Rol 1, Rol 0), ipcDist)
   ]
   where
-    ipcDist s = 1.03e-6 + s * 2.39e-10
+    ipcDist s = 1.13e-6 + s * 2.39e-10
 
 ppIpcRecv :: Map (Role, Role) (Double -> Double)
 ppIpcRecv = Map.fromList
@@ -152,7 +152,7 @@ ppIpcRecv = Map.fromList
   , ((Rol 1, Rol 0), ipcDist)
   ]
   where
-    ipcDist s = 1.94e-6 + s * 2.39e-10
+    ipcDist s = 2e-6 + s * log s * 2.42e-11
 
 ppThro :: Time
 ppThro = throughput rpingpong
@@ -164,7 +164,7 @@ total :: Map Role Double -> Double
 total = Map.foldl' max 0
 
 ppIpcTimes :: [Double]
-ppIpcTimes = map evalIpc [1, 10, 100, 1000]
+ppIpcTimes = map evalIpc [1, 10, 100, 1000, 10000, 100000]
   where
     evalIpc i = total $ evalTime ppIpcSend ppIpcRecv (ppSizes i) ppCost
 
@@ -174,7 +174,7 @@ ppEvSend = Map.fromList
   , ((Rol 1, Rol 0), evDist)
   ]
   where
-    evDist _ = 1.5e-6
+    evDist _ = 1.6e-6
 
 ppEvRecv :: Map (Role, Role) (Double -> Double)
 ppEvRecv = Map.fromList
@@ -209,6 +209,9 @@ ppLwtTimes :: [Double]
 ppLwtTimes = map evalEv [1, 10, 100, 1000]
   where
     evalEv i = total $ evalTime ppLwtSend ppLwtRecv (ppSizes i) ppCost
+
+err :: Double -> Double -> Double
+err m s = abs (m - s) / m
 
 ----------------------------------------------------------------------
 ----------------------------------------------------------------------

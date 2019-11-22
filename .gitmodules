@@ -1,0 +1,3 @@
+[submodule "benchmarks/ocaml-mpst"]
+	path = benchmarks/ocaml-mpst
+	url = https://github.com/keigoi/ocaml-mpst.git
