@@ -1,6 +1,6 @@
-module PabbleMPI where
+module CParallel where
 
-import Control.Monad ( join )
+import Control.Monad ( zipWithM_ )
 import Data.Map.Strict ( Map )
 import qualified Data.Map.Strict as Map
 import Language.SessionTypes.Common
@@ -40,47 +40,65 @@ printD x y z = mapM_ putStrLn $ zipWith3 app x y z
 
 
 --------------------------------------------------------------------------------
--- RING
+-- FFT
 
-ringM :: [Role] -> GTM ()
-ringM ps@(p : _) = sendAll ps >> recvAll ps
+fftTopo :: String -> [Role] -> GTM ()
+fftTopo _ []  = pure ()
+fftTopo _ [_] = pure ()
+fftTopo c xs  =
+  fftTopo "c" evens >>
+  fftTopo "c" odds >>
+  zipWithM_ sendT evens odds >>
+  zipWithM_ sendT odds evens >>
+  zipWithM_ recvT evens odds >>
+  zipWithM_ recvT odds evens
   where
-    sendAll (q : qs@(r : _))
-      = send q r (Var $ "\\tau") >> sendAll qs
-    sendAll [q] = send q p (Var $ "\\tau")
-    sendAll _ = pure ()
+    (evens, odds) = split xs
+    split [] = ([], [])
+    split [x] = ([x], [])
+    split (x:y:zs) = (x:xt, y:yt) where (xt, yt) = split zs
+    sendT r1 r2 = send r1 r2 (Var $ "\\tau")
+    recvT r1 r2 = recv r1 r2 (Var $ "\\tau") (CVar c)
 
-    recvAll (q : qs@(r : _))
-      = recv q r (Var $ "\\tau") (CVar $ "c") >> recvAll qs
-    recvAll [q] = recv q p (Var $ "\\tau") (CVar $ "c")
-    recvAll _ = pure ()
-ringM [] = pure ()
+mkFft :: Int -> CGT
+mkFft i = gclose $ sequence (replicate (2^i) mkRole) >>= fftTopo "c_1"
 
-ringP :: Int -> CGT
-ringP i = gclose $ join (ringM <$> mkRoles i)
-
-seqNBCost :: Double -> Double
-seqNBCost d = 177 / d + 9.08e-1 + d * log d * 2.3e-3
-
-nbodyVars :: Int -> Map String Double
-nbodyVars p = Map.fromList [ ("c", seqNBCost $ fromIntegral p)
-                           , ("\\tau", 10**6)
-                           ]
-nbody :: [Double]
-nbody = map go [1, 4, 16, 32, 64]
+fft :: [Double]
+fft = map (total . tm) [ 1, 2, 3, 4, 5, 6, 7, 8 ]
   where
-    go i = total $ evalTime cx1Send cx1Recv (nbodyVars i) (cost $ ringP i)
+    tm i = evalTime cx1Send cx1Recv (fftVars i) (cost $ mkFft i)
 
-nbodyR :: [Double]
-nbodyR = [ 177.908376
-         , 44.710916
-         , 11.097
-         , 7.8411185
-         , 4.282142
-         ]
+fftVars :: Int -> Map String Double
+fftVars i = Map.fromList [ ("c_1", fftCost 142.1 i)
+                         , ("c", 1.25)
+                         ]
 
-nbodyErr :: [Double]
-nbodyErr = zipWith err nbodyR nbody
+fftCost :: Double -> Int -> Double
+fftCost d i
+  | i <= 1 = d + 1
+  | otherwise = fftCost (d / 2 + 1)  (i - 1)
 
---------------------------------------------------------------------------------
--- RING
+realA1Times :: [Double]
+realA1Times = [ 2296.84e-9
+              , 2139.24e-9
+              , 2862.79e-9
+              , 3300.9e-9
+              ]
+
+fftR :: [Double]
+fftR =
+  [ 143.016404
+  , 74.175541
+  , 40.817588
+  , 21.755833
+  , 14.519975
+  , 12.467197
+  , 11.970078
+  , 12.686601
+  ]
+
+fftErr :: [Double]
+fftErr = zipWith err fftR fft
+
+printFft :: IO ()
+printFft = printD fft fftR fftErr
