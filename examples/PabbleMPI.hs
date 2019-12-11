@@ -78,13 +78,6 @@ fftCost d i
   | i <= 1 = d + 1
   | otherwise = fftCost (d / 2 + 1)  (i - 1)
 
-realA1Times :: [Double]
-realA1Times = [ 2296.84e-9
-              , 2139.24e-9
-              , 2862.79e-9
-              , 3300.9e-9
-              ]
-
 fftR :: [Double]
 fftR =
   [ 143.016404
@@ -100,5 +93,98 @@ fftR =
 fftErr :: [Double]
 fftErr = zipWith err fftR fft
 
+-- sizes: 67108864
 printFft :: IO ()
 printFft = printD fft fftR fftErr
+
+--------------------------------------------------------------------------------
+-- Mergesort
+
+data PTree = Leaf Role | Node Role PTree PTree
+  deriving Show
+
+ps :: PTree -> [Role]
+ps (Leaf p) = [p]
+ps (Node _ l r) = ps l ++ ps r
+
+hd :: PTree -> Role
+hd (Leaf p) = p
+hd (Node p _ _) = p
+
+dcTree :: Int -> Role -> GTM PTree
+dcTree i p
+  | i <= 1 = pure $ Leaf p
+  | otherwise = do
+      q <- mkRole
+      r <- mkRole
+      t1 <- dcTree (i-1) q
+      t2 <- dcTree (i-1) r
+      pure $ Node p t1 t2
+
+choices :: Role -> [Role] -> (Label, GTM ()) -> (Label, GTM ()) -> GTM ()
+choices _ [] _ _ = pure ()
+choices a (b:cs) (ll, gl) (lr, gr)
+  = choice a b ((ll ... choiceL ll cs gl) .| ((lr ... choiceL lr cs gr) .| mempty))
+  where
+    choiceL _l [] g = g
+    choiceL l (c:ds) g = choice a c ((l ... choiceL l ds g) .| mempty)
+
+divConq :: String -> PTree -> GTM ()
+divConq _ (Leaf _) = pure ()
+divConq s (Node p t1 t2) = do
+  choices p (ps t1 ++ ps t2) (Lbl 1, pure ()) (Lbl 2, body)
+  where
+    body = message p (hd t1) (Var "\\tau") (CVar s) >>
+      message p (hd t2) (Var "\\tau") (CVar s) >>
+      divConq "c_s" t1 >>
+      divConq "c_s" t2 >>
+      message (hd t1) p (Var "\\tau") (CVar "c_m") >>
+      message (hd t2) p (Var "\\tau") (CVar "c_m")
+
+dcP :: Int -> CGT
+dcP i = gclose $ do
+  p <- mkRole
+  t <- dcTree i p
+  divConq "c" t
+
+
+-- 536870912
+msR :: [Double]
+msR =
+  [ 98.145231
+  , 53.183744
+  , 31.325671
+  , 18.091493
+  , 14.214225
+  ]
+
+ms :: [Double]
+ms = 98.145231 : map (total . tm) [ 2, 3, 4, 5 ]
+  where
+    tm i = evalTime cx1Send cx1Recv (dcVars i) (cost $ dcP i)
+
+dcVars :: Int -> Map String Double
+dcVars i = Map.fromList [ ("c_m", 0)
+                         , ("c", dcCost 98.145231 i 1)
+                         ]
+
+dcCost :: Double -> Int -> Int -> Double
+dcCost d i j -- = d / fromIntegral i
+  | i <= 1 = d
+  | otherwise = dcCost (d / 2 + 4.5) (i - 1) (j+1)
+
+
+-- divConq i p
+--   | i <= 1 = pure (Left p)
+--   | otherwise = do
+--       q <- mkRole
+--       r <- mkRole
+--
+--       divConq (i-1)
+
+msErr :: [Double]
+msErr = zipWith err msR ms
+
+-- sizes: 67108864
+printMs :: IO ()
+printMs = printD ms msR msErr
