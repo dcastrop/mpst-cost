@@ -1,5 +1,4 @@
 {-# LANGUAGE FlexibleInstances #-}
-{-# LANGUAGE TypeSynonymInstances #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 module Language.SessionTypes.Cost
   ( CGT
@@ -37,6 +36,7 @@ module Language.SessionTypes.Cost
   ) where
 
 import Control.Monad.State.Strict
+import Data.Maybe ( fromMaybe )
 import Data.Set ( Set )
 import qualified Data.Set as Set
 import Data.Map.Strict ( Map )
@@ -59,7 +59,7 @@ class LaTeX t where
   latex :: t -> Doc ann
 
 instance LaTeX String where
-  latex i = pretty i
+  latex = pretty
 
 instance LaTeX i => LaTeX (Size i) where
   latex (Var i) = latex i
@@ -243,8 +243,7 @@ instance LaTeX (Alt CGT) where
 
 instance LaTeX CGT where
   latex (CChoice src dest b) = Pretty.align
-                               $! Pretty.vsep
-                               $! [ Pretty.hsep [ latex src
+                               $! Pretty.vsep [ Pretty.hsep [ latex src
                                                 , pretty "\\gMsg"
                                                 , latex dest
                                                  ]
@@ -299,8 +298,7 @@ instance LaTeX CGT where
 
 instance Pretty CGT where
   pretty (CChoice src dest b) = Pretty.align
-                                $! Pretty.vsep
-                                $! [ Pretty.hsep [ pretty src
+                                $! Pretty.vsep [ Pretty.hsep [ pretty src
                                                  , pretty "->"
                                                  , pretty dest
                                                  ]
@@ -406,7 +404,7 @@ choice r1 rs (GAlt gs) = do
   as <- runAll gs
   put s { globalType = globalType s . CChoice r1 rs . as }
   where
-    runAll [] = pure $! \_ -> emptyAlt
+    runAll [] = pure $! const emptyAlt
     runAll (LAlt (l, g1) : gk) = do
       gh <- getG g1
       gt <- runAll gk
@@ -488,17 +486,17 @@ roles :: CGT -> Set Role
 roles CGEnd = Set.empty
 roles CGVar{} = Set.empty
 roles (CGRec _ _ g) = roles g
-roles (CComm f t _ _ g) = Set.unions [ Set.fromList $ [f, t]
+roles (CComm f t _ _ g) = Set.unions [ Set.fromList [f, t]
                                      , roles g
                                      ]
-roles (CGSend f t _ g) = Set.unions [ Set.fromList $ [f, t]
+roles (CGSend f t _ g) = Set.unions [ Set.fromList [f, t]
                                      , roles g
                                      ]
-roles (CGRecv f t _ _ g) = Set.unions [ Set.fromList $ [f, t]
+roles (CGRecv f t _ _ g) = Set.unions [ Set.fromList [f, t]
                                      , roles g
                                      ]
 roles (CChoice r rs Alt { altMap = m } )
-  = Set.unions [ Set.fromList $ [r, rs]
+  = Set.unions [ Set.fromList [r, rs]
                , Set.unions $ map (roles . snd) $ Map.toList m
                ]
 
@@ -521,7 +519,7 @@ maxTime = Map.unionWith CMax
 appMsgQ :: MsgQ -> MsgQ -> MsgQ
 appMsgQ = Map.unionWith maxQ
   where
-    maxQ l r = zipWith CMax l r
+    maxQ = zipWith CMax
 
 instance Semigroup (MTime ()) where
   c1 <> c2 = do
@@ -570,7 +568,7 @@ bCost (CGRecv f t ty c k) = do
 bCost (CChoice r1 rs alts) = do
   sendCost rs (K 1) r1
   recvCost r1 (K 1) Nothing rs
-  foldAlt (<>) mempty (mapAlt (\_ -> bCost) alts)
+  foldAlt (<>) mempty (mapAlt (const bCost) alts)
 
 alterTime :: (Maybe (Cost String) -> Cost String) -> Role -> TSt -> TSt
 alterTime f r s = s { time = Map.alter (Just . f) r $ time s }
@@ -632,7 +630,7 @@ addCost :: Time -> Time -> Time
 addCost = Map.unionWith CAdd
 
 mulCost :: Integer -> Time -> Time
-mulCost i t = Map.map (CMul (K i)) t
+mulCost i = Map.map (CMul (K i))
 
 delta :: Time -> Time
 delta t = Map.mapWithKey (\r _ -> CDelta r t) t
@@ -659,7 +657,7 @@ sCost (CGRecv f t ty c k) = do
 sCost (CChoice r1 rs alts) = do
   sendCost rs (K 1) r1
   recvCost r1 (K 1) Nothing rs
-  foldAlt (<>) mempty (mapAlt (\_ -> bCost) alts)
+  foldAlt (<>) mempty (mapAlt (const bCost) alts)
 
 -- Cost of costw (mu X. G)
 rCost :: CGT -> MTime ()
@@ -686,7 +684,7 @@ printEqns :: Time -> IO ()
 printEqns = putStrLn . showEqns
 
 latexEqns :: Time -> IO ()
-latexEqns t = putStrLn $ show $ Pretty.vsep $ map tme $ Map.toList t
+latexEqns t = print (Pretty.vsep $ map tme $ Map.toList t)
   where
     tme (r, c) = pretty "T_" <> latex r
       Pretty.<+> pretty "=" Pretty.<+> latex c
@@ -700,7 +698,7 @@ evalTime csend crecv vars = Map.map evalC
   where
     evalC :: VCost -> Double
     evalC (CSize s    ) = evalS s
-    evalC (CVar v     ) = maybe 0 id $! Map.lookup v vars
+    evalC (CVar v     ) = fromMaybe 0 $! Map.lookup v vars
     evalC (CRec _     ) = 0 -- XXX: Fixme
     evalC (CAdd l r   ) = evalC l + evalC r
     evalC (CMax l r   ) = max (evalC l) (evalC r)
@@ -712,7 +710,7 @@ evalTime csend crecv vars = Map.map evalC
         rd i = maybe 0 evalC $! Map.lookup r (unroll i d)
 
     evalS :: VSize -> Double
-    evalS (Var v   ) = maybe 0 id $! Map.lookup v vars
+    evalS (Var v   ) = fromMaybe 0 $! Map.lookup v vars
     evalS (K k     ) = fromInteger k
     evalS (SAdd l r) = evalS l + evalS r
     evalS (SSub l r) = evalS l - evalS r
@@ -720,14 +718,14 @@ evalTime csend crecv vars = Map.map evalC
     evalS (SDiv l r) = evalS l / evalS r
 
 unrollTime :: Time -> Time -> Time
-unrollTime to t = Map.map (\v -> doUnroll v) t
+unrollTime to = Map.map doUnroll
   where
     doUnroll c@CSize{} = c
     doUnroll c@CVar{}  = c
     doUnroll c@CSend{} = c
     doUnroll c@CRecv{} = c
     doUnroll c@CDelta{} = c
-    doUnroll c@(CRec r) = maybe c id $! Map.lookup r to
+    doUnroll c@(CRec r) = fromMaybe c $! Map.lookup r to
     doUnroll (CAdd l r) = CAdd (doUnroll l) (doUnroll r)
     doUnroll (CMax l r) = CMax (doUnroll l) (doUnroll r)
     doUnroll (CMul l r) = CMul l (doUnroll r)
@@ -758,7 +756,7 @@ evalDelta csend crecv vars = Map.map evalC
   where
     evalC :: VCost -> Double
     evalC (CSize s    ) = evalS s
-    evalC (CVar v     ) = maybe 0 id $! Map.lookup v vars
+    evalC (CVar v     ) = fromMaybe 0 $! Map.lookup v vars
     evalC (CRec _     ) = 0 -- XXX: Fixme
     evalC (CAdd l r   ) = evalC l + evalC r
     evalC (CMax l r   ) = max (evalC l) (evalC r)
@@ -770,7 +768,7 @@ evalDelta csend crecv vars = Map.map evalC
         rd i = maybe 0 evalC $! Map.lookup r (unroll i d)
 
     evalS :: VSize -> Double
-    evalS (Var v   ) = maybe 0 id $! Map.lookup v vars
+    evalS (Var v   ) = fromMaybe 0 $! Map.lookup v vars
     evalS (K k     ) = fromInteger k
     evalS (SAdd l r) = evalS l + evalS r
     evalS (SSub l r) = evalS l - evalS r
