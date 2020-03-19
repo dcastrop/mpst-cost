@@ -204,12 +204,6 @@ showCost = show . pretty
 
 type VCost = Cost String
 
--- data Msg pl ann =
---   Msg { rfrom :: ![Role]
---       , rto :: ![Role]
---       , rty :: pl
---       , msgAnn :: !(Maybe ann) }
-
 data CGT
   = CChoice Role Role (Alt CGT)
   | CComm Role Role VSize VCost CGT
