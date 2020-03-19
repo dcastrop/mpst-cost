@@ -1,5 +1,4 @@
 {-# LANGUAGE FlexibleInstances #-}
-{-# LANGUAGE TypeSynonymInstances #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 module Language.SessionTypes.Global
   ( GT (..)
@@ -83,7 +82,7 @@ type GTM v pl ann a = State (GTSt v pl ann) a
 message :: Role -> Role -> pl -> ann -> GTM v pl ann ()
 message r1 r2 ty ann = do
   s <- get
-  put s { globalType = globalType s . Comm (Msg [r1] [r2] ty $! Just ann) }
+  put s { globalType = globalType s . Comm (Msg [r1] [r2] ty (Just ann)) }
 
 newtype LAlt v pl ann = LAlt (Label, GTM v pl ann ())
 
@@ -105,7 +104,7 @@ choice r1 rs (GAlt gs) = do
   as <- runAll gs
   put s { globalType = globalType s . Choice r1 rs . as }
   where
-    runAll [] = pure $! \_ -> emptyAlt
+    runAll [] = pure $! const emptyAlt
     runAll (LAlt (l, g1) : gk) = do
       gh <- getG g1
       gt <- runAll gk
@@ -234,8 +233,7 @@ instance (Pretty v, Pretty ann, Pretty pl) => Pretty (GT v pl ann) where
   --                    Pretty.punctuate (pretty ";") $!
   --                    map pretty gs
   pretty (Choice src dest b) = Pretty.align
-                               $! Pretty.vsep
-                               $! [ Pretty.hsep [ pretty src
+                               $! Pretty.vsep [ Pretty.hsep [ pretty src
                                                 , pretty "->"
                                                 , pretty $ RS dest
                                                 ]
