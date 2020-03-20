@@ -26,6 +26,9 @@ dependencies:
 - mtl >= 2.2 && < 2.3
 
 library:
-  source-dirs: src
+  source-dirs: 
+  - src
+  - examples
+  - benchmarks 
   ghc-options:
   - -Wall

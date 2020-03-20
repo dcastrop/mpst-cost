@@ -1,6 +1,6 @@
 module Cost1 where
 
-import Control.Monad ( zipWithM_ )
+import Control.Monad ( zipWithM_, replicateM )
 import Data.Map.Strict ( Map )
 import qualified Data.Map.Strict as Map
 import Language.SessionTypes.Common
@@ -43,13 +43,13 @@ scatter i p
   | i <= 0 = pure []
   | otherwise = do
       q <- mkRole
-      message p q (Var $ "\\tau_1") (CVar $ "c_1")
+      message p q (Var "\\tau_1") (CVar "c_1")
       (q:) <$> scatter (i-1) p
 
 gather :: Role -> [Role] -> GTM ()
 gather _ [] = pure ()
 gather p (q:rs) = do
-  message q p (Var $ "\\tau_2") (CVar $ "c_2")
+  message q p (Var "\\tau_2") (CVar "c_2")
   gather p rs
 
 scatterGather :: Integer -> GTM () -> GTM ()
@@ -72,18 +72,18 @@ ring :: [Role] -> GTM ()
 ring ps@(p : _) = sendAll ps >> recvAll ps
   where
     sendAll (q : qs@(r : _))
-      = send q r (Var $ "\\tau") >> sendAll qs
-    sendAll [q] = send q p (Var $ "\\tau")
+      = send q r (Var "\\tau") >> sendAll qs
+    sendAll [q] = send q p (Var "\\tau")
     sendAll _ = pure ()
 
     recvAll (q : qs@(r : _))
-      = recv q r (Var $ "\\tau") (CVar $ "c") >> recvAll qs
-    recvAll [q] = recv q p (Var $ "\\tau") (CVar $ "c")
+      = recv q r (Var "\\tau") (CVar "c") >> recvAll qs
+    recvAll [q] = recv q p (Var "\\tau") (CVar "c")
     recvAll _ = pure ()
 ring [] = pure ()
 
 ringTopo :: Int -> GTM ()
-ringTopo i = sequence (replicate i mkRole) >>= ring
+ringTopo i = replicateM i mkRole >>= ring
 
 ring2 :: CGT
 ring2 = gclose $ ringTopo 2
@@ -108,11 +108,11 @@ fftTopo xs  =
     split [] = ([], [])
     split [x] = ([x], [])
     split (x:y:zs) = (x:xt, y:yt) where (xt, yt) = split zs
-    sendT r1 r2 = send r1 r2 (Var $ "\\tau")
-    recvT r1 r2 = recv r1 r2 (Var $ "\\tau") (CVar "c")
+    sendT r1 r2 = send r1 r2 (Var "\\tau")
+    recvT r1 r2 = recv r1 r2 (Var "\\tau") (CVar "c")
 
 mkFft :: Int -> GTM ()
-mkFft i = sequence (replicate (2^i) mkRole) >>= fftTopo
+mkFft i = Control.Monad.replicateM (2^i) mkRole >>= fftTopo
 
 fft2 :: CGT
 fft2 = gclose $ mkFft 2

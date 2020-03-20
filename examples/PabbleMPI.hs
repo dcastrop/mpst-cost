@@ -1,13 +1,13 @@
-module CParallel where
+module PabbleMPI where
 
-import Control.Monad ( zipWithM_ )
+import Control.Monad ( zipWithM_, replicateM )
 import Data.Map.Strict ( Map )
 import qualified Data.Map.Strict as Map
 import Language.SessionTypes.Common
 import Language.SessionTypes.Cost
 
 mkRoles :: Int -> GTM [Role]
-mkRoles i = sequence (replicate i mkRole)
+mkRoles i = replicateM i mkRole
 
 total :: Map Role Double -> Double
 total = Map.foldl' max 0
@@ -57,11 +57,11 @@ fftTopo c xs  =
     split [] = ([], [])
     split [x] = ([x], [])
     split (x:y:zs) = (x:xt, y:yt) where (xt, yt) = split zs
-    sendT r1 r2 = send r1 r2 (Var $ "\\tau")
-    recvT r1 r2 = recv r1 r2 (Var $ "\\tau") (CVar c)
+    sendT r1 r2 = send r1 r2 (Var "\\tau")
+    recvT r1 r2 = recv r1 r2 (Var "\\tau") (CVar c)
 
 mkFft :: Int -> CGT
-mkFft i = gclose $ sequence (replicate (2^i) mkRole) >>= fftTopo "c_1"
+mkFft i = gclose $ Control.Monad.replicateM (2^i) mkRole >>= fftTopo "c_1"
 
 fft :: [Double]
 fft = map (total . tm) [ 1, 2, 3, 4, 5, 6, 7, 8 ]
@@ -131,7 +131,7 @@ choices a (b:cs) (ll, gl) (lr, gr)
 
 divConq :: String -> PTree -> GTM ()
 divConq _ (Leaf _) = pure ()
-divConq s (Node p t1 t2) = do
+divConq s (Node p t1 t2) =
   choices p (ps t1 ++ ps t2) (Lbl 1, pure ()) (Lbl 2, body)
   where
     body = message p (hd t1) (Var "\\tau") (CVar s) >>

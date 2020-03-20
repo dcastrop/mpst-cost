@@ -1,6 +1,6 @@
-module PabbleMPI where
+module CParallel where
 
-import Control.Monad ( join )
+import Control.Monad ( join, replicateM )
 import Data.Map.Strict ( Map )
 import Data.List ( transpose )
 import qualified Data.Map.Strict as Map
@@ -8,7 +8,7 @@ import Language.SessionTypes.Common
 import Language.SessionTypes.Cost
 
 mkRoles :: Int -> GTM [Role]
-mkRoles i = sequence (replicate i mkRole)
+mkRoles i = replicateM i mkRole
 
 total :: Map Role Double -> Double
 total = Map.foldl' max 0
@@ -78,14 +78,14 @@ nbodyErr = zipWith err nbodyR nbody
 
 sendAll :: Role -> [Role] -> GTM ()
 sendAll p (q : qs@(r : _))
-  = send q r (Var $ "\\tau") >> sendAll p qs
-sendAll p [q] = send q p (Var $ "\\tau")
+  = send q r (Var "\\tau") >> sendAll p qs
+sendAll p [q] = send q p (Var "\\tau")
 sendAll _ _ = pure ()
 
 recvAllC :: String -> Role -> [Role] -> GTM ()
 recvAllC c p (q : qs@(r : _))
-  = recv q r (Var $ "\\tau") (CVar c) >> recvAllC c p qs
-recvAllC c p [q] = recv q p (Var $ "\\tau") (CVar c)
+  = recv q r (Var "\\tau") (CVar c) >> recvAllC c p qs
+recvAllC c p [q] = recv q p (Var "\\tau") (CVar c)
 recvAllC _ _ _ = pure ()
 
 recvAll :: Role -> [Role] -> GTM ()
@@ -104,7 +104,7 @@ meshM ps = mapM_ sAll ps >> mapM_ sAll sp >>
     rAll _ _ = pure ()
 
 mkRoleMatrix :: Int -> GTM [[Role]]
-mkRoleMatrix i = mapM mkRoles $ replicate i i
+mkRoleMatrix i = replicateM i (mkRoles i)
 
 meshP :: Int -> CGT
 meshP i = gclose $ join (meshM <$> mkRoleMatrix i)
@@ -137,17 +137,17 @@ solverErr = zipWith err solverR solver
 
 scatter :: Role -> [Role] -> GTM ()
 scatter _ []     = pure ()
-scatter p (q:qs) = message p q (Var $ "\\tau_s") (CVar $ "c_s") >>
+scatter p (q:qs) = message p q (Var "\\tau_s") (CVar "c_s") >>
                    scatter p qs
 
 gather :: [Role] -> Role -> GTM ()
 gather []     _ = pure ()
-gather (q:qs) p = message q p (Var $ "\\tau_g") (CVar $ "c_g") >>
+gather (q:qs) p = message q p (Var "\\tau_g") (CVar "c_g") >>
                   gather qs p
 
 scatterGather :: Role -> Int -> Role -> GTM ()
 scatterGather p i q = do
-  ps <- sequence $ replicate i mkRole
+  ps <- replicateM i mkRole
   scatter p ps
   gather ps q
 
@@ -180,7 +180,7 @@ adVars :: Int -> Map String Double
 adVars i = Map.fromList [ ("c_s", adCost $ fromIntegral i)
                             ]
 adCost :: Double -> Double
-adCost d = 656 / d + d * 1
+adCost d = 656 / d + d
 
 adErr :: [Double]
 adErr = zipWith err adR ad
