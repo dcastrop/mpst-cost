@@ -7,7 +7,9 @@ module Language.SessionTypes.Cost
   , printCGT
   , latexCGT
   , Size (..)
+  , VSize
   , Cost (..)
+  , VCost
   , Time
   , bCost
   , rCost

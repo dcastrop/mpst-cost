@@ -1,8 +1,7 @@
 module CParallel where
 
-import Control.Monad ( join, replicateM )
+import Control.Monad ( zipWithM_, replicateM )
 import Data.Map.Strict ( Map )
-import Data.List ( transpose )
 import qualified Data.Map.Strict as Map
 import Language.SessionTypes.Common
 import Language.SessionTypes.Cost
@@ -41,183 +40,151 @@ printD x y z = mapM_ putStrLn $ zipWith3 app x y z
 
 
 --------------------------------------------------------------------------------
--- RING
+-- FFT
 
-ringM :: [Role] -> GTM ()
-ringM ps@(p : _) = sendAll p ps >> recvAll p ps
-ringM [] = pure ()
-
-ringP :: Int -> CGT
-ringP i = gclose $ join (ringM <$> mkRoles i)
-
-seqNBCost :: Double -> Double
-seqNBCost d = 177 / d + 9.08e-1 + d * log d * 2.3e-3
-
-nbodyVars :: Int -> Map String Double
-nbodyVars p = Map.fromList [ ("c", seqNBCost $ fromIntegral p)
-                           , ("\\tau", 10**6)
-                           ]
-nbody :: [Double]
-nbody = map go [1, 4, 16, 32, 64]
+fftTopo :: String -> [Role] -> GTM ()
+fftTopo _ []  = pure ()
+fftTopo _ [_] = pure ()
+fftTopo c xs  =
+  fftTopo "c" evens >>
+  fftTopo "c" odds >>
+  zipWithM_ sendT evens odds >>
+  zipWithM_ sendT odds evens >>
+  zipWithM_ recvT evens odds >>
+  zipWithM_ recvT odds evens
   where
-    go i = total $ evalTime cx1Send cx1Recv (nbodyVars i) (cost $ ringP i)
+    (evens, odds) = split xs
+    split [] = ([], [])
+    split [x] = ([x], [])
+    split (x:y:zs) = (x:xt, y:yt) where (xt, yt) = split zs
+    sendT r1 r2 = send r1 r2 (Var "\\tau")
+    recvT r1 r2 = recv r1 r2 (Var "\\tau") (CVar c)
 
-nbodyR :: [Double]
-nbodyR = [ 177.908376
-         , 44.710916
-         , 11.097
-         , 7.8411185
-         , 4.282142
-         ]
+mkFft :: Int -> CGT
+mkFft i = gclose $ Control.Monad.replicateM (2^i) mkRole >>= fftTopo "c_1"
 
-nbodyErr :: [Double]
-nbodyErr = zipWith err nbodyR nbody
+fft :: [Double]
+fft = map (total . tm) [ 1, 2, 3, 4, 5, 6, 7, 8 ]
+  where
+    tm i = evalTime cx1Send cx1Recv (fftVars i) (cost $ mkFft i)
+
+fftVars :: Int -> Map String Double
+fftVars i = Map.fromList [ ("c_1", fftCost 142.1 i)
+                         , ("c", 1.25)
+                         ]
+
+fftCost :: Double -> Int -> Double
+fftCost d i
+  | i <= 1 = d + 1
+  | otherwise = fftCost (d / 2 + 1)  (i - 1)
+
+fftR :: [Double]
+fftR =
+  [ 143.016404
+  , 74.175541
+  , 40.817588
+  , 21.755833
+  , 14.519975
+  , 12.467197
+  , 11.970078
+  , 12.686601
+  ]
+
+fftErr :: [Double]
+fftErr = zipWith err fftR fft
+
+-- sizes: 67108864
+printFft :: IO ()
+printFft = printD fft fftR fftErr
 
 --------------------------------------------------------------------------------
--- MESH
+-- Mergesort
 
-sendAll :: Role -> [Role] -> GTM ()
-sendAll p (q : qs@(r : _))
-  = send q r (Var "\\tau") >> sendAll p qs
-sendAll p [q] = send q p (Var "\\tau")
-sendAll _ _ = pure ()
+data PTree = Leaf Role | Node Role PTree PTree
+  deriving Show
 
-recvAllC :: String -> Role -> [Role] -> GTM ()
-recvAllC c p (q : qs@(r : _))
-  = recv q r (Var "\\tau") (CVar c) >> recvAllC c p qs
-recvAllC c p [q] = recv q p (Var "\\tau") (CVar c)
-recvAllC _ _ _ = pure ()
+ps :: PTree -> [Role]
+ps (Leaf p) = [p]
+ps (Node _ l r) = ps l ++ ps r
 
-recvAll :: Role -> [Role] -> GTM ()
-recvAll = recvAllC "c"
+hd :: PTree -> Role
+hd (Leaf p) = p
+hd (Node p _ _) = p
 
-meshM :: [[Role]] -> GTM ()
-meshM ps = mapM_ sAll ps >> mapM_ sAll sp >>
-           mapM_ (rAll False) ps >> mapM_ (rAll True) sp
+dcTree :: Int -> Role -> GTM PTree
+dcTree i p
+  | i <= 1 = pure $ Leaf p
+  | otherwise = do
+      q <- mkRole
+      r <- mkRole
+      t1 <- dcTree (i-1) q
+      t2 <- dcTree (i-1) r
+      pure $ Node p t1 t2
+
+choices :: Role -> [Role] -> (Label, GTM ()) -> (Label, GTM ()) -> GTM ()
+choices _ [] _ _ = pure ()
+choices a (b:cs) (ll, gl) (lr, gr)
+  = choice a b ((ll ... choiceL ll cs gl) .| ((lr ... choiceL lr cs gr) .| mempty))
   where
-    sp = transpose ps
-    sAll qs@(p:_) = sendAll p qs
-    sAll _ = pure ()
-    rAll b qs@(p:_)
-      | b         = recvAll p qs
-      | otherwise = recvAllC "c_w" p qs
-    rAll _ _ = pure ()
+    choiceL _l [] g = g
+    choiceL l (c:ds) g = choice a c ((l ... choiceL l ds g) .| mempty)
 
-mkRoleMatrix :: Int -> GTM [[Role]]
-mkRoleMatrix i = replicateM i (mkRoles i)
-
-meshP :: Int -> CGT
-meshP i = gclose $ join (meshM <$> mkRoleMatrix i)
-
-solver :: [Double]
-solver = map go [1, 2, 4, 6, 8]
+divConq :: String -> PTree -> GTM ()
+divConq _ (Leaf _) = pure ()
+divConq s (Node p t1 t2) =
+  choices p (ps t1 ++ ps t2) (Lbl 1, pure ()) (Lbl 2, body)
   where
-    go i = total $ evalTime cx1Send cx1Recv (solverVars i) (cost $ meshP i)
+    body = message p (hd t1) (Var "\\tau") (CVar s) >>
+      message p (hd t2) (Var "\\tau") (CVar s) >>
+      divConq "c_s" t1 >>
+      divConq "c_s" t2 >>
+      message (hd t1) p (Var "\\tau") (CVar "c_m") >>
+      message (hd t2) p (Var "\\tau") (CVar "c_m")
 
-solverVars :: Int -> Map String Double
-solverVars i = Map.fromList [ ("c", solverCost $ fromIntegral i)
-                            ]
-
-solverCost :: Double -> Double
-solverCost d = 4.5836835 / (d*d) + 6.4 / d
-
-solverR :: [Double]
-solverR =
-  [ sum [10.5836835, 10.5836835, 10.5836835, 10.5836835, 10.5836835, 10.5836835] / 6
-  , sum [3.488013  , 3.543354  , 4.595234  , 4.808623  , 4.308554  , 5.927986  ] / 6
-  , sum [1.882221  , 1.801822  , 1.217853  , 1.679229  , 1.883321  , 1.856217  ] / 6
-  , sum [1.099540  , 1.371320  , 1.353402  , 1.356969  , 1.442624  , 1.230535  ] / 6
-  , sum [0.755533  , 0.783954  , 0.634727  , 0.715382  , 0.737718  , 0.715501  ] / 6
-  ]
-
-solverErr :: [Double]
-solverErr = zipWith err solverR solver
-
---- ad predictor & wordcount
-
-scatter :: Role -> [Role] -> GTM ()
-scatter _ []     = pure ()
-scatter p (q:qs) = message p q (Var "\\tau_s") (CVar "c_s") >>
-                   scatter p qs
-
-gather :: [Role] -> Role -> GTM ()
-gather []     _ = pure ()
-gather (q:qs) p = message q p (Var "\\tau_g") (CVar "c_g") >>
-                  gather qs p
-
-scatterGather :: Role -> Int -> Role -> GTM ()
-scatterGather p i q = do
-  ps <- replicateM i mkRole
-  scatter p ps
-  gather ps q
-
-mkSC :: Int -> CGT
-mkSC i = gclose $ do
+dcP :: Int -> CGT
+dcP i = gclose $ do
   p <- mkRole
-  q <- mkRole
-  scatterGather p i q
+  t <- dcTree i p
+  divConq "c" t
 
-ad :: [Double]
-ad = map go [1, 2, 4, 8, 12, 16, 24, 48, 64]
-  where
-    go i = total $ evalTime cx1Send cx1Recv (adVars i) (cost $ mkSC i)
 
-adR :: [Double]
-adR =
-  [ sum [ 653,  660] / 2
-  , sum [ 293,  275] / 2
-  , sum [ 141,  154] / 2
-  , sum [ 74 , 73  ] / 2
-  , sum [  55,  74 ] / 2
-  , sum [  65,  65 ] / 2
-  , sum [  47,  44 ] / 2
-  , sum [  54,  53 ] / 2
-  , sum [  63,  64 ] / 2
+-- 536870912
+msR :: [Double]
+msR =
+  [ 98.145231
+  , 53.183744
+  , 31.325671
+  , 18.091493
+  , 14.214225
   ]
 
-
-adVars :: Int -> Map String Double
-adVars i = Map.fromList [ ("c_s", adCost $ fromIntegral i)
-                            ]
-adCost :: Double -> Double
-adCost d = 656 / d + d
-
-adErr :: [Double]
-adErr = zipWith err adR ad
-
-printAd :: IO ()
-printAd = printD ad adR adErr
-
----------------------------------------------------------------------------------
--- WordCount
-
-wc :: [Double]
-wc = map go [1, 2, 4, 8, 12, 16, 24, 48, 64]
+ms :: [Double]
+ms = 98.145231 : map (total . tm) [ 2, 3, 4, 5 ]
   where
-    go i = total $ evalTime cx1Send cx1Recv (wcVars i) (cost $ mkSC i)
+    tm i = evalTime cx1Send cx1Recv (dcVars i) (cost $ dcP i)
 
-wcR :: [Double]
-wcR =
-  [ sum [ 42, 72 ] / 2
-  , sum [ 26, 29 ] / 2
-  , sum [ 17, 22 ] / 2
-  , sum [ 13, 19 ] / 2
-  , sum [ 12, 20 ] / 2
-  , sum [ 12, 13 ] / 2
-  , sum [ 26, 13 ] / 2
-  , sum [ 23, 23 ] / 2
-  , sum [ 23, 23 ] / 2
-  ]
+dcVars :: Int -> Map String Double
+dcVars i = Map.fromList [ ("c_m", 0)
+                         , ("c", dcCost 98.145231 i 1)
+                         ]
+
+dcCost :: Double -> Int -> Int -> Double
+dcCost d i j -- = d / fromIntegral i
+  | i <= 1 = d
+  | otherwise = dcCost (d / 2 + 4.5) (i - 1) (j+1)
 
 
-wcVars :: Int -> Map String Double
-wcVars i = Map.fromList [ ("c_s", wcCost $ fromIntegral i)
-                            ]
-wcCost :: Double -> Double
-wcCost d = 57 / d + log d * 4.75
+-- divConq i p
+--   | i <= 1 = pure (Left p)
+--   | otherwise = do
+--       q <- mkRole
+--       r <- mkRole
+--
+--       divConq (i-1)
 
-wcErr :: [Double]
-wcErr = zipWith err wcR wc
+msErr :: [Double]
+msErr = zipWith err msR ms
 
-printWc :: IO ()
-printWc = printD wc wcR wcErr
+-- sizes: 67108864
+printMs :: IO ()
+printMs = printD ms msR msErr
